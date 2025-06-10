@@ -1,0 +1,11 @@
+# 운영 환경 설정
+logging:
+  level:
+    root: INFO
+    com.example.backend: INFO
+  file:
+    name: logs/app.log
+  logback:
+    rolling policy:
+      max-file-size: 10MB
+      max-history: 7
