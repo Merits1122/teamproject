@@ -2,8 +2,8 @@ package com.example.backend.repository;
 
 import com.example.backend.entity.project.ProjectInvitationStatus;
 import com.example.backend.entity.project.ProjectMember;
-import com.example.backend.entity.Project;
-import com.example.backend.entity.User;
+import com.example.backend.entity.project.Project;
+import com.example.backend.entity.user.User;
 import com.example.backend.entity.project.ProjectRole;
 import org.springframework.data.jpa.repository.JpaRepository;
 import java.util.List;

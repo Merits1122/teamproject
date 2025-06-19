@@ -1,18 +1,11 @@
 "use client"
 
 import type React from "react"
-import { Suspense, useState } from "react"
+import { Suspense, useState, useEffect, useCallback } from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -20,9 +13,10 @@ import { useToast } from "@/hooks/use-toast"
 import { setToken } from "@/lib/auth"
 import { GoogleLogin, CredentialResponse } from '@react-oauth/google';
 import { Loader2 } from "lucide-react";
+import { apiCall } from "@/lib/api"
 
 interface LoginResponse {
-  token?: string | null; // 2FA가 필요하면 null일 수 있음
+  token?: string | null;
   twoFactorRequired?: boolean;
   message?: string;
   username?: string;
@@ -41,116 +35,90 @@ function LoginForm() {
     password: "",
   });
 
+  useEffect(() => {
+    const errorType = searchParams.get('error');
+    if (errorType) {
+      let description = "다시 로그인해주세요.";
+      if (errorType === 'session_expired') {
+        description = "세션이 만료되었습니다. 다시 로그인해주세요.";
+      } else if (errorType === 'auth_required') {
+        description = "해당 페이지에 접근하려면 로그인이 필요합니다.";
+      }
+      
+      toast({
+        title: "로그인 필요",
+        description: description,
+        variant: "destructive",
+      });
+
+      const newPath = window.location.pathname;
+      router.replace(newPath, { scroll: false });
+    }
+  }, [searchParams, router, toast]);
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleLoginResponse = (response: LoginResponse, emailFor2FA: string) => {
+  
+
+  const handleLoginSuccess = useCallback((response: LoginResponse, emailFor2FA: string) => {
     const originalRedirectUrl = searchParams.get("redirect");
 
     if (response.twoFactorRequired) {
-        // 2FA가 필요한 경우
-        toast({ title: "2단계 인증 필요", description: response.message || "이메일로 전송된 인증 코드를 입력해주세요." });
-        // 2FA 페이지로 이동할 경로를 구성합니다.
-        let twoFactorPath = `/twofactor?email=${encodeURIComponent(emailFor2FA)}`;
+      toast({ title: "2단계 인증 필요", description: response.message || "이메일로 전송된 인증 코드를 입력해주세요." });
+      let twoFactorPath = `/twofactor?email=${encodeURIComponent(emailFor2FA)}`;
         
-        if (originalRedirectUrl) {
-          twoFactorPath += `&redirect=${encodeURIComponent(originalRedirectUrl)}`;
-        }
+      if (originalRedirectUrl) {
+        twoFactorPath += `&redirect=${encodeURIComponent(originalRedirectUrl)}`;
+      }
         
-        router.push(twoFactorPath);
+      router.push(twoFactorPath);
     } else if (response.token) {
-        const identifier = response.username || response.email || emailFor2FA;
-        setToken(response.token, rememberMe);
-        if (identifier && typeof window !== "undefined") {
-          if (rememberMe) localStorage.setItem("app_user_identifier", identifier);
-          else sessionStorage.setItem("app_user_identifier", identifier);
-        }
-        
-        toast({ title: "성공!", description: "로그인에 성공했습니다." });
-        
-        const redirectUrl = searchParams.get("redirect");
-        if (redirectUrl) {
-          router.push(redirectUrl);
-        } else {
-          router.push("/dashboard");
-        }
-    } else {
-        // 예상치 못한 응답
-        toast({ title: "오류", description: "알 수 없는 로그인 응답입니다.", variant: "destructive"});
-    }
-  };
+      const identifier = response.username || response.email || emailFor2FA;
+      setToken(response.token, rememberMe);
+      if (identifier) {
+        if (rememberMe) localStorage.setItem("app_user_identifier", identifier);
+        else sessionStorage.setItem("app_user_identifier", identifier);
+      }
+      
 
-  // 이메일/비밀번호 로그인 핸들러
-  const handleEmailPasswordSubmit = async (e: React.FormEvent) => {
+      if (originalRedirectUrl) {
+        router.push(decodeURIComponent(originalRedirectUrl));
+      } else {
+        router.push("/dashboard");
+      }
+    } else {
+      toast({ title: "오류", description: "알 수 없는 로그인 응답입니다.", variant: "destructive"});
+    }
+  }, [searchParams, rememberMe, router, toast]);
+
+   const handleEmailPasswordSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.email || !formData.password) {
       toast({ title: "오류", description: "이메일과 비밀번호를 모두 입력해주세요.", variant: "destructive" });
       return;
     }
     setIsLoading(true);
-    setIsGoogleLoading(false);
 
-    try {
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8080"}/api/auth/login`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: formData.email, password: formData.password }),
-        }
-      );
-      
-      
-      if (response.ok) { // 성공 (2xx 상태 코드)
-        // 성공 시에는 응답이 항상 JSON이므로 .json()을 사용합니다.
+    const response = await apiCall<LoginResponse>('/api/auth/login', {
+      method: "POST",
+      body: JSON.stringify(formData),
+    });
 
-        const successData: LoginResponse = await response.json();
-        console.log("로그인 API 응답 성공:", successData);
-        console.log("응답에 포함된 토큰:", successData.token);
-        handleLoginResponse(successData, formData.email);
-      } else {
-        // 실패 (4xx, 5xx 상태 코드)
-        // 1. 오류 응답의 본문을 text()로 딱 한 번만 읽어서 변수에 저장합니다.
-        const errorMessage = await response.text(); 
-
-        // 2. response.status 값에 따라 원하셨던 분기 처리를 수행합니다.
-        if (response.status === 401) {
-          // 401 Unauthorized: 비밀번호 틀림
-          toast({
-            title: "로그인 실패",
-            description: errorMessage || "비밀번호를 다시 확인해주세요.",
-            variant: "destructive",
-          });
-        } else if (response.status === 403) {
-          // 403 Forbidden: 접근 거부 (여기서는 이메일 미인증)
-          toast({
-            title: "이메일 인증 필요",
-            description: errorMessage || "이메일 인증을 완료해야 로그인할 수 있습니다.",
-            variant: "destructive",
-          });
-        } else {
-          // 그 외 다른 모든 오류 (예: 500 서버 오류)
-          toast({
-            title: "오류 발생",
-            description: errorMessage || "알 수 없는 오류가 발생했습니다.",
-            variant: "destructive",
-          });
-        }
-      }
-    } catch (error: any) {
-      console.error("Login API error:", error);
-      toast({ title: "네트워크 또는 서버 오류", description: error.message || "서버와 통신 중 문제가 발생했습니다.", variant: "destructive" });
-    } finally {
-      setIsLoading(false);
+    if (response.success) {
+      handleLoginSuccess(response.data, formData.email);
+    } else {
+      const { status, message } = response.error;
+      const title = (status === 401 || status === 403) ? "로그인 실패" : "오류 발생";
+      toast({ title, description: message, variant: "destructive" });
     }
-  };
+    setIsLoading(false);
+  }, [formData, toast, handleLoginSuccess]);
 
-  // 구글 로그인 성공 시 콜백
-  const handleGoogleLoginSuccess = async (credentialResponse: CredentialResponse) => {
+  const handleGoogleLoginSuccess = useCallback(async (credentialResponse: CredentialResponse) => {
     setIsGoogleLoading(true);
-    setIsLoading(false); // 다른 로그인 시도 시 일반 로딩 상태 해제
     const googleIdToken = credentialResponse.credential;
 
     if (!googleIdToken) {
@@ -159,36 +127,18 @@ function LoginForm() {
       return;
     }
 
-    try {
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8080"}/api/auth/google/login`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ idToken: googleIdToken }),
-        }
-      );
+    const response = await apiCall<LoginResponse>('/api/auth/google/login', {
+      method: 'POST',
+      body: JSON.stringify({ idToken: googleIdToken })
+    });
 
-      const data: LoginResponse = await response.json();
-      if (response.ok) {
-        // 🔽 구글 로그인 시에는 백엔드 응답의 email이 필요
-        const emailFor2FARedirect = data.email || ""; 
-        handleLoginResponse(data, emailFor2FARedirect);
-      } else {
-        let errorMessage = "구글 계정으로 로그인할 수 없습니다.";
-        if (data && data.message) {
-            errorMessage = data.message;
-        }
-        toast({ title: "구글 로그인 실패", description: errorMessage, variant: "destructive" });
-      }
-
-    } catch (error: any) {
-      console.error("Google Login API error:", error);
-      toast({ title: "오류", description: error.message || "서버와 통신 중 문제가 발생했습니다.", variant: "destructive" });
-    } finally {
-      setIsGoogleLoading(false);
+    if (response.success) {
+      handleLoginSuccess(response.data, response.data.email || "");
+    } else {
+      toast({ title: "구글 로그인 실패", description: response.error.message, variant: "destructive" });
     }
-  };
+    setIsGoogleLoading(false);
+  }, [toast, handleLoginSuccess]);
 
   const handleGoogleLoginError = () => {
     console.error("Google Login Failed (onError callback from GoogleLogin component)");
@@ -221,7 +171,7 @@ function LoginForm() {
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label htmlFor="password">비밀번호</Label>
-                <Link href="/forgot-password" // 비밀번호 찾기 페이지 경로
+                <Link href="/forgot-password"
                     className="text-sm text-primary hover:underline"
                 >
                   비밀번호를 잊으셨나요?
@@ -279,7 +229,7 @@ function LoginForm() {
                     size="large"
                     logo_alignment="center"
                     text="continue_with"
-                    width={"300px"} // Card의 max-w-md는 384px. 패딩 고려하여 적절히 조절
+                    width={"300px"}
                 />
               )}
             </div>

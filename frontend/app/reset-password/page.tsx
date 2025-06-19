@@ -1,120 +1,136 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useState, useEffect, Suspense, useCallback } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2 } from "lucide-react";
+import { apiCall } from "@/lib/api";
 
-// URLSearchParams를 읽기 위한 Suspense Wrapper (필수)
+
 function ResetPasswordForm() {
-  const router = useRouter();
-  const searchParams = useSearchParams(); // 클라이언트 컴포넌트에서 URL 파라미터 읽기
+  const searchParams = useSearchParams();
   const { toast } = useToast();
-
-  const [token, setToken] = useState<string | null>(null);
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting] = useState(false);
+  const [error, setError] = useState({
+    newPassword: "",
+    confirmPassword: "",
+    general: ""
+  });
   const [success, setSuccess] = useState(false);
+  const [formData, setFormData] = useState({
+    token: "",
+    newPassword: "",
+    confirmPassword: "",
+  });
 
   useEffect(() => {
     const tokenFromUrl = searchParams.get("token");
     if (tokenFromUrl) {
-      setToken(tokenFromUrl);
+      setFormData(prev => ({ ...prev, token: tokenFromUrl }));
     } else {
-      setError("유효하지 않은 접근입니다. 비밀번호 재설정 토큰이 URL에 없습니다.");
-      toast({
-        title: "오류",
-        description: "유효하지 않은 재설정 링크입니다.",
-        variant: "destructive",
-      });
+      setError(prev => ({...prev, general: "유효하지 않은 접근입니다. 비밀번호 재설정 링크를 다시 확인해주세요."}));
     }
-  }, [searchParams, toast]);
+  setIsLoading(false);
+  }, [searchParams]);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
+    if (error[name as keyof typeof error]) {
+      setError(prev => ({ ...prev, [name]: "" }));
+    }
+  };
+
+  const validate = useCallback(() => {
+    const newErrors = { newPassword: "", confirmPassword: "", general: "" };
+    let isValid = true;
+    
+    if (!formData.newPassword) {
+        newErrors.newPassword = "새 비밀번호를 입력해주세요.";
+        isValid = false;
+    } else if (formData.newPassword.length < 8) {
+        newErrors.newPassword = "비밀번호는 최소 8자 이상이어야 합니다.";
+        isValid = false;
+    } else if (!/[!@#$,./?]/.test(formData.newPassword)) {
+        newErrors.newPassword = "비밀번호는 특수문자(!@#$,./?)를 포함해야 합니다.";
+        isValid = false;
+    }
+
+    if (!formData.confirmPassword) {
+        newErrors.confirmPassword = "비밀번호 확인을 입력해주세요.";
+        isValid = false;
+    } else if (formData.newPassword !== formData.confirmPassword) {
+        newErrors.confirmPassword = "비밀번호가 일치하지 않습니다.";
+        isValid = false;
+    }
+        
+    setError(newErrors);
+    return isValid;
+  }, [formData]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null); // 이전 에러 메시지 초기화
-
-    if (!newPassword || !confirmPassword) {
-      toast({ title: "입력 오류", description: "새 비밀번호와 확인 비밀번호를 모두 입력해주세요.", variant: "destructive" });
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      toast({ title: "입력 오류", description: "새 비밀번호와 확인 비밀번호가 일치하지 않습니다.", variant: "destructive" });
-      return;
-    }
-    if (newPassword.length < 8) { // 백엔드 정책과 일치하는지 확인
-        toast({ title: "입력 오류", description: "비밀번호는 최소 8자 이상이어야 합니다.", variant: "destructive" });
-        return;
-    }
-    if (!token) {
-      toast({ title: "오류", description: "재설정 토큰이 유효하지 않습니다.", variant: "destructive" });
+    if (!validate() || !formData.token) {
+      if (!formData.token) {
+        toast({ 
+          title: "오류", 
+          description: "재설정 토큰이 유효하지 않습니다.", 
+          variant: "destructive" 
+        });
+      }
       return;
     }
 
     setIsLoading(true);
+    setError({ newPassword: "", confirmPassword: "", general: "" });
 
-    try {
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8080"}/api/auth/reset-password`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ token: token, newPassword: newPassword }),
-        }
-      );
+    const response = await apiCall('/api/auth/reset-password', {
+      method: "POST",
+      body: JSON.stringify({ 
+        token: formData.token, 
+        newPassword: formData.newPassword
+      }),
+    });
 
-      if (response.ok) {
-        setSuccess(true);
-        toast({
-          title: "성공",
-          description: "비밀번호가 성공적으로 변경되었습니다. 다시 로그인해주세요.",
-        });
-        // router.push("/login"); // 몇 초 후 로그인 페이지로 리다이렉트 가능
-      } else {
-        let errorMessage = "비밀번호 변경에 실패했습니다.";
-        try {
-            const errorData = await response.json();
-            if (errorData) { // 백엔드가 문자열만 보냈을 경우 errorData가 문자열일 수 있음
-                errorMessage = typeof errorData === 'string' ? errorData : errorData.message || errorMessage;
-            }
-        } catch (e) {
-            const textError = await response.text().catch(() => null);
-            if(textError) errorMessage = textError;
-        }
-        setError(errorMessage);
-        toast({ title: "오류", description: errorMessage, variant: "destructive" });
-      }
-    } catch (err: any) {
-      console.error("Reset password error:", err);
-      setError(err.message || "비밀번호 변경 중 오류가 발생했습니다.");
-      toast({ title: "네트워크 또는 서버 오류", description: "서버와 통신 중 문제가 발생했습니다.", variant: "destructive" });
-    } finally {
-      setIsLoading(false);
+    if (response.success) {
+      setSuccess(true);
+      toast({
+        title: "성공",
+        description: "비밀번호가 성공적으로 변경되었습니다. 이제 새 비밀번호로 로그인해주세요.",
+      });
+    } else {
+      console.error("비밀번호 재설정 실패:", response.error);
+      setError(prev => ({ ...prev, general: response.error.message }));
+      toast({ 
+        title: "오류", 
+        description: response.error.message, 
+        variant: "destructive" 
+      });
     }
+    setIsLoading(false);
   };
 
-  if (error && !token && !success) { // 토큰이 아예 없는 초기 에러
+  if (isLoading) {
+    return <div className="p-8 text-center">
+    <Loader2 className="mx-auto h-8 w-8 animate-spin" />
+    <p className="mt-2">확인 중...</p>
+    </div>
+  }
+
+  if (error && !formData.token && !success) {
     return (
-        <div className="text-center p-8">
-            <p className="text-destructive">{error}</p>
-            <Link href="/login" className="mt-4 inline-block">
-                <Button variant="link">로그인 페이지로 돌아가기</Button>
-            </Link>
-        </div>
+      <div className="text-center p-8">  
+        <p className="text-destructive">{error.general}</p>
+        <Link href="/login" className="mt-4 inline-block">
+          <Button variant="link">로그인 페이지로 돌아가기</Button>
+        </Link>
+      </div>
     );
   }
 
@@ -140,30 +156,32 @@ function ResetPasswordForm() {
           <Label htmlFor="newPassword">새 비밀번호</Label>
           <Input
             id="newPassword"
+            name="newPassword"
             type="password"
-            placeholder="********"
-            value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
-            disabled={isLoading || !token}
+            value={formData.newPassword}
+            onChange={handleChange}
+            disabled={isSubmitting || !formData.token}
           />
+          {error.newPassword && <p className="text-sm text-destructive mt-1">{error.newPassword}</p>}
         </div>
         <div className="space-y-2">
           <Label htmlFor="confirmPassword">새 비밀번호 확인</Label>
           <Input
             id="confirmPassword"
+            name="confirmPassword"
             type="password"
-            placeholder="********"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            disabled={isLoading || !token}
+            value={formData.confirmPassword}
+            onChange={handleChange}
+            disabled={isSubmitting || !formData.token}
           />
+          {error.confirmPassword && <p className="text-sm text-destructive mt-1">{error.confirmPassword}</p>}
         </div>
-        {error && <p className="text-sm text-destructive text-center">{error}</p>}
+        {error.general && <p className="text-sm text-destructive text-center pt-2">{error.general}</p>}
       </CardContent>
       <CardFooter className="flex flex-col">
-        <Button type="submit" className="w-full" disabled={isLoading || !token}>
-          {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          {isLoading ? "비밀번호 변경 중..." : "비밀번호 변경"}
+        <Button type="submit" className="w-full" disabled={isSubmitting || !formData.token}>
+          {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          {isSubmitting ? "비밀번호 변경 중..." : "비밀번호 변경"}
         </Button>
       </CardFooter>
     </form>
@@ -172,25 +190,31 @@ function ResetPasswordForm() {
 
 
 export default function ResetPasswordPageContainer() {
-    return (
-        <div className="flex min-h-screen items-center justify-center p-4 bg-muted/40">
-            <Card className="w-full max-w-md">
-                <CardHeader className="space-y-1 text-center">
-                    <CardTitle className="text-2xl font-bold">새 비밀번호 설정</CardTitle>
-                    <CardDescription>
-                        URL의 토큰이 유효한 경우 새 비밀번호를 설정할 수 있습니다.
-                    </CardDescription>
-                </CardHeader>
-                {/* Suspense로 감싸서 useSearchParams가 클라이언트에서 준비될 때까지 기다림 */}
-                <Suspense fallback={<div className="p-8 text-center"><Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" /> <p className="mt-2 text-muted-foreground">링크 정보 확인 중...</p></div>}>
-                    <ResetPasswordForm />
-                </Suspense>
-                 <CardFooter className="flex justify-center mt-4">
-                    <Link href="/login" className="text-sm text-primary hover:underline">
-                        로그인으로 돌아가기
-                    </Link>
-                </CardFooter>
-            </Card>
-        </div>
-    );
+  return (
+    <div className="flex min-h-screen items-center justify-center p-4 bg-muted/40">
+      <Card className="w-full max-w-md">
+        <CardHeader className="space-y-1 text-center">
+          <CardTitle className="text-2xl font-bold">새 비밀번호 설정</CardTitle>
+            <CardDescription>
+              URL의 토큰이 유효한 경우 새 비밀번호를 설정할 수 있습니다.
+            </CardDescription>
+        </CardHeader>
+        <Suspense fallback={
+          <div className="p-8 text-center">
+            <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" /> 
+            <p className="mt-2 text-muted-foreground">
+              링크 정보 확인 중...
+            </p>
+          </div>
+        }>
+        <ResetPasswordForm />
+        </Suspense>
+        <CardFooter className="flex justify-center mt-4">
+          <Link href="/login" className="text-sm text-primary hover:underline">
+            로그인으로 돌아가기
+          </Link>
+        </CardFooter>
+      </Card>
+    </div>
+  );
 }

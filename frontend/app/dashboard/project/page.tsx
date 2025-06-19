@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
@@ -9,41 +9,13 @@ import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { AlertCircle, Calendar, CheckCircle, Search, ServerCrash, FolderOpen, Users } from "lucide-react"
-import { CreateProjectDialog } from "@/components/projects/create-project-dialog" // 경로 확인
-import { getToken } from "@/lib/auth" // auth.ts 경로 확인
+import { Calendar, CheckCircle, Search, ServerCrash, FolderOpen, Users } from "lucide-react"
+import { CreateProjectDialog } from "@/components/projects/create-project-dialog"
 import { ko } from 'date-fns/locale';
 import { compareAsc, format, parseISO } from "date-fns";
-
-// --- 타입 정의 시작 ---
-interface TaskSummaryOnPage {
-  id: number;
-  title: string;
-  status: "TODO" | "IN_PROGRESS" | "DONE"; // 백엔드 Task의 status와 일치 (대문자)
-  dueDate?: string;
-}
-
-interface DashboardProjectMemberInfo { // 프로젝트 목록 카드에 표시할 멤버 요약 정보
-  userId: number;
-  name: string; // 또는 initials
-  avatarUrl?: string | null;
-  initials?: string; // 추가: 멤버 이니셜
-}
-
-interface ApiProjectOnDashboard {
-  id: number;
-  name: string;
-  description: string;
-  startDate?: string;
-  endDate?: string;
-  // membersCount: number; // 이 필드 대신 아래 members 배열의 길이를 사용할 수 있음
-  status: "TODO" | "IN_PROGRESS" | "DONE";
-  creatorUsername?: string; // 프로젝트 생성자 (폴백 아바타 등에 활용 가능)
-  createdAt?: string;
-  updatedAt?: string;
-  tasks: TaskSummaryOnPage[];
-  members: DashboardProjectMemberInfo[]; // ⬅️ 각 프로젝트의 (요약된) 멤버 목록
-}
+import { Status, ApiProject, ProjectMember } from "@/lib/types"
+import { useToast } from "@/hooks/use-toast"
+import { apiCall } from "@/lib/api"
 
 interface FrontendProjectOnDashboard {
   id: number;
@@ -52,24 +24,22 @@ interface FrontendProjectOnDashboard {
   progress: number;
   tasksInfo: { total: number; completed: number };
   displayDueDate: string;
-  membersToDisplay: DashboardProjectMemberInfo[]; // UI에 표시할 멤버 목록
-  totalMembersCount: number; // 프로젝트의 전체 멤버 수 (membersToDisplay.length와 다를 수 있음 - API에서 제공)
-  status: "TODO" | "IN_PROGRESS" | "DONE";
+  membersToDisplay: ProjectMember[];
+  totalMembersCount: number;
+  status: Status;
   creatorUsername?: string;
-  displayStatus: string; // 추가: 프로젝트 상태의 한글 표시 등
+  displayStatus: string;
 }
-// --- 타입 정의 끝 ---
 
-// 🔽 getInitials 함수 수정: 이름의 첫 글자만 반환하도록
 const getInitials = (name?: string | null): string => {
-    if (name && name.length > 0) {
-      return name.charAt(0).toUpperCase();
-    }
-    return "U"; // 이름이 없을 경우 기본값 "User"
+  if (name && name.length > 0) {
+    return name.charAt(0).toUpperCase();
+  }
+  return "U";
 };
 
-// API 응답을 프론트엔드용 데이터로 변환하는 함수
-const mapApiProjectToFrontend = (apiProject: ApiProjectOnDashboard): FrontendProjectOnDashboard => {
+
+const mapApiProjectToFrontend = (apiProject: ApiProject): FrontendProjectOnDashboard => {
   const completedTasks = apiProject.tasks?.filter(task => task.status === "DONE").length || 0;
   const totalTasks = apiProject.tasks?.length || 0;
   const progress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
@@ -81,114 +51,74 @@ const mapApiProjectToFrontend = (apiProject: ApiProjectOnDashboard): FrontendPro
     case "DONE": displayStatusText = "완료됨"; break;
   }
 
-  const membersForDisplay = (apiProject.members || []).map(member => ({
-      ...member,
-      initials: getInitials(member.name) // 이니셜 생성
-  }));
-
   return {
     id: apiProject.id,
     name: apiProject.name,
     description: apiProject.description,
-    progress: progress,
+    progress,
     tasksInfo: { total: totalTasks, completed: completedTasks },
     displayDueDate: apiProject.endDate ? format(parseISO(apiProject.endDate), "PP", { locale: ko }) : "날짜 미정",
-    membersToDisplay: membersForDisplay, // ⬅️ API에서 받은 멤버 목록 사용
-    totalMembersCount: apiProject.members?.length || 0, // ⬅️ members 배열 길이로 전체 멤버 수 설정
+    membersToDisplay: (apiProject.members || []).map(member => ({ ...member, initials: getInitials(member.name) })),
+    totalMembersCount: apiProject.members?.length || 0,
     status: apiProject.status,
-    displayStatus: displayStatusText, // 이 필드가 FrontendProjectOnDashboard에 없다면 추가 또는 displayStatusText를 직접 사용
-    creatorUsername: apiProject.creatorUsername,
+    displayStatus: displayStatusText,
   };
 };
 
 export default function ProjectsPage() {
+  const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
-  const [projects, setProjects] = useState<FrontendProjectOnDashboard[]>([]) // 초기값을 빈 배열로
+  const [projects, setProjects] = useState<FrontendProjectOnDashboard[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const fetchProjects = async () => {
+  const fetchProjects = useCallback(async () => {
     setIsLoading(true);
     setError(null);
-    const token = getToken();
+    console.log("프로젝트 목록 조회를 시작합니다.");
 
-    if (!token) {
-      setError("인증 토큰이 없습니다. 로그인해주세요.");
-      setIsLoading(false);
-      // 예: import { useRouter } from "next/navigation";
-      // const router = useRouter(); router.push("/login");
-      return;
-    }
+    const response = await apiCall<ApiProject[]>('/api/projects');
 
-    try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080'}/api/projects`, {
-        headers: {
-          "Authorization": `Bearer ${token}`
-        }
-      });
+    if (response.success) {
+      console.log("프로젝트 목록 조회 API 호출 성공. 받은 데이터:", response.data);
+      const apiProjects = response.data;
 
-      if (!response.ok) {
-        if (response.status === 401 || response.status === 403) {
-          setError("프로젝트 목록을 가져올 권한이 없습니다. 다시 로그인해주세요.");
-        } else {
-          const errorData = await response.json().catch(() => ({ message: "알 수 없는 서버 오류" }));
-          throw new Error(errorData.message || `프로젝트 목록 조회 실패 (상태: ${response.status})`);
-        }
-        setProjects([]); // 오류 시 빈 배열로 확실히 초기화
-        return;
-      }
-
-      const apiProjects: ApiProjectOnDashboard[] = await response.json();
-      // 🔽 프로젝트 정렬 로직
       const sortedApiProjects = [...apiProjects].sort((a, b) => {
-        // 백엔드에서 effectiveStatus를 계산해서 보내주므로, 프론트에서는 그 값을 사용
-        // 만약 mapApiProjectToFrontend를 먼저 실행해야 한다면, 그 결과를 정렬
-        const statusA = a.status; // 또는 계산된 effectiveStatus가 있다면 사용
-        const statusB = b.status;
-        const isADone = statusA === "DONE";
-        const isBDone = statusB === "DONE";
+        const isADone = a.status === "DONE";
+        const isBDone = b.status === "DONE";
 
         if (isADone && !isBDone) return 1;
         if (!isADone && isBDone) return -1;
-        
+
         const dateA = a.endDate ? parseISO(a.endDate) : null;
         const dateB = b.endDate ? parseISO(b.endDate) : null;
+
+        if (!dateA && !dateB) {
+          return a.name.localeCompare(b.name);
+        }
+
+        if (!dateA) return 1;
+        if (!dateB) return -1;
         
-        if (dateA === null && dateB === null) return a.name.localeCompare(b.name);
-        if (dateA === null) return 1;
-        if (dateB === null) return -1;
-
-        return compareAsc(dateA, dateB);
+        return compareAsc(dateA, dateB) || a.name.localeCompare(b.name);
       });
-
-      // 정렬된 배열을 사용하여 프론트엔드용 데이터로 변환
       setProjects(sortedApiProjects.map(mapApiProjectToFrontend));
-      
-    } catch (err: any) {
-      console.error("Failed to fetch projects:", err);
-      setError(err.message || "프로젝트 목록을 가져오는 중 오류가 발생했습니다.");
-      setProjects([]);
-    } finally {
-      setIsLoading(false);
+    } else {
+      console.error("프로젝트 목록 조회 API 호출 실패:", response.error);
+      setError(response.error.message);
+      toast({ title: "오류", description: "프로젝트 목록을 가져올 수 없습니다.", variant: "destructive"});
     }
-  };
+    setIsLoading(false);
+  }, [toast]);
 
   useEffect(() => {
     fetchProjects();
-  }, []); // 컴포넌트 마운트 시 1회 실행
+  }, [fetchProjects]);
 
-  const handleProjectCreated = (newApiProject: ApiProjectOnDashboard) => { // 타입 일치
-    const newFrontendProject = mapApiProjectToFrontend(newApiProject);
-    setProjects((prevProjects) => {
-      const existingProjectIndex = prevProjects.findIndex(p => p.id === newFrontendProject.id);
-      if (existingProjectIndex > -1) {
-        const updatedProjects = [...prevProjects];
-        updatedProjects[existingProjectIndex] = newFrontendProject;
-        return updatedProjects;
-      }
-      return [newFrontendProject, ...prevProjects];
-    });
+  const handleProjectCreated = (newProject: ApiProject) => {
+    const newFrontendProject = mapApiProjectToFrontend(newProject);
+    setProjects(prevProjects => [newFrontendProject, ...prevProjects]);
   };
 
   const filteredProjects = projects.filter((project) => {
@@ -204,11 +134,36 @@ export default function ProjectsPage() {
   });
 
   if (isLoading) {
-    return ( /* 로딩 UI */ <div className="flex justify-center items-center h-[calc(100vh-100px)]"><div className="flex flex-col items-center"><svg className="animate-spin h-10 w-10 text-primary mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><p className="text-muted-foreground">프로젝트 목록을 불러오는 중...</p></div></div>);
+    return ( 
+    <div className="flex justify-center items-center h-[calc(100vh-100px)]">
+      <div className="flex flex-col items-center">
+        <svg className="animate-spin h-10 w-10 text-primary mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4">
+          </circle>
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
+          </path>
+        </svg>
+        <p className="text-muted-foreground">
+          프로젝트 목록을 불러오는 중...
+        </p>
+      </div>
+    </div>);
   }
 
   if (error) {
-    return ( /* 에러 UI */ <div className="flex flex-col justify-center items-center h-[calc(100vh-100px)] p-4 text-center"><ServerCrash className="w-16 h-16 text-destructive mb-4" /><h2 className="text-xl font-semibold text-destructive mb-2">오류 발생</h2><p className="text-muted-foreground mb-4">{error}</p><Button onClick={fetchProjects}>다시 시도</Button></div>);
+    return ( 
+    <div className="flex flex-col justify-center items-center h-[calc(100vh-100px)] p-4 text-center">
+      <ServerCrash className="w-16 h-16 text-destructive mb-4" />
+      <h2 className="text-xl font-semibold text-destructive mb-2">
+        오류 발생
+      </h2>
+      <p className="text-muted-foreground mb-4">
+        {error}
+      </p>
+      <Button onClick={fetchProjects}>
+        다시 시도
+      </Button>
+    </div>);
   }
 
   return (
@@ -218,7 +173,7 @@ export default function ProjectsPage() {
           <h1 className="text-3xl font-bold tracking-tight">프로젝트</h1>
           <p className="text-muted-foreground">모든 프로젝트를 관리하고 새 프로젝트를 생성하세요.</p>
         </div>
-        <CreateProjectDialog onProjectCreated={handleProjectCreated as (project: any) => void} />
+        <CreateProjectDialog onProjectCreated={handleProjectCreated} />
       </div>
 
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -300,12 +255,11 @@ export default function ProjectsPage() {
               <CardFooter>
                 <div className="flex items-center justify-between w-full">
                   <div className="flex -space-x-2 overflow-hidden">
-                    {/* 🔽 실제 멤버 아바타 표시 */}
-                    {project.membersToDisplay.slice(0, 3).map((member) => ( // 최대 3명 표시
-                      <Avatar key={member.userId} className="border-2 border-background h-7 w-7">
-                        <AvatarImage src={member.avatarUrl || undefined} alt={member.name || "멤버"} />
-                        {/* 🔽 수정된 getInitials 함수로 생성된 initials 사용 */}
-                        <AvatarFallback>{member.initials}</AvatarFallback>
+                    {project.membersToDisplay.slice(0, 3).map((member) => ( 
+                      <Avatar key={member.id} className="border-2 border-background h-7 w-7">
+                        <AvatarImage src={member.avatarUrl || undefined} 
+                        alt={member.name || "멤버"} />
+                        <AvatarFallback>{getInitials(member.name)}</AvatarFallback>
                       </Avatar>
                     ))}
                     {project.totalMembersCount > 3 && (

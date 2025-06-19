@@ -1,7 +1,7 @@
 package com.example.backend.controller;
 
 import com.example.backend.dto.AcceptInvitationRequest;
-import com.example.backend.entity.User;
+import com.example.backend.entity.user.User;
 import com.example.backend.service.ProjectMemberService;
 import com.example.backend.service.UserService;
 import jakarta.persistence.EntityNotFoundException;

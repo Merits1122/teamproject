@@ -13,7 +13,7 @@ public class ChangePasswordRequest {
     private String currentPassword;
 
     @NotBlank(message = "새 비밀번호는 필수")
-    @Size(min = 8, message = "새 비밀번호는 최소 8자 이상") // 정책에 맞게 조정
+    @Size(min = 8, message = "새 비밀번호는 최소 8자 이상")
     @Pattern(
             regexp = ".*[!@#$,./?].*",
             message = "새 비밀번호는 특수문자(!@#$,./?)를 포함"

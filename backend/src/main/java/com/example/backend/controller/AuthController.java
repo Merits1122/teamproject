@@ -1,7 +1,7 @@
 package com.example.backend.controller;
 
 import com.example.backend.dto.*;
-import com.example.backend.entity.User;
+import com.example.backend.entity.user.User;
 import com.example.backend.repository.UserRepository;
 import com.example.backend.security.JwtTokenProvider;
 import com.example.backend.service.OAuthService;
@@ -13,13 +13,12 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.*;
-
 import java.io.IOException;
 import java.security.GeneralSecurityException;
 
@@ -37,12 +36,12 @@ public class AuthController {
 
     public AuthController(UserService userService,
                           OAuthService oAuthService,
-                          AuthenticationConfiguration authenticationConfiguration,
+                          AuthenticationManager authenticationManager,
                           JwtTokenProvider jwtTokenProvider,
-                          UserRepository userRepository) throws Exception{
+                          UserRepository userRepository){
         this.userService = userService;
         this.oAuthService = oAuthService;
-        this.authenticationManager = authenticationConfiguration.getAuthenticationManager();
+        this.authenticationManager = authenticationManager;
         this.jwtTokenProvider = jwtTokenProvider;
         this.userRepository = userRepository;
     }
@@ -172,5 +171,14 @@ public class AuthController {
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(e.getMessage());
         }
+    }
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ResponseEntity<String> handleValidationExceptions(MethodArgumentNotValidException ex) {
+        String errorMessage = ex.getBindingResult().getAllErrors().get(0).getDefaultMessage();
+        logger.warn("유효성 검사 실패: {}", errorMessage);
+
+        return ResponseEntity.badRequest().body(errorMessage);
     }
 }

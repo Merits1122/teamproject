@@ -1,8 +1,8 @@
 package com.example.backend.dto;
 
-import com.example.backend.entity.User;
-import com.example.backend.entity.UserProfile;
-import com.example.backend.entity.UserSecurity;
+import com.example.backend.entity.user.User;
+import com.example.backend.entity.user.UserProfile;
+import com.example.backend.entity.user.UserSecurity;
 import lombok.Getter;
 import lombok.Setter;
 

@@ -1,11 +1,8 @@
-// app/layout.tsx
-import type React from "react" // React 임포트
+import type React from "react"
 import type { Metadata } from "next"
 import { Inter } from "next/font/google"
 import "./globals.css"
-// import { ThemeProvider } from "@/components/theme-provider"; // ⬅️ 여기서 직접 사용하지 않음
 import { Toaster } from "@/components/ui/toaster"
-import { Providers } from "@/components/providers"; // ⬅️ 새로 만든 Providers 컴포넌트 임포트
 import { GoogleOAuthProvider } from '@react-oauth/google';
 
 const inter = Inter({ subsets: ["latin"] })
@@ -24,12 +21,11 @@ export default function RootLayout({
 
   if (!googleAuthClientId) {
     console.error("Google Client ID is not defined in environment variables.");
-    // 클라이언트 ID가 없을 경우를 대비한 처리
   }
   return (
     <html lang="ko" suppressHydrationWarning>
       <body className={inter.className}>
-        <GoogleOAuthProvider clientId={googleAuthClientId}> {/* ⬅️ 이 Provider로 감싸줍니다 */}
+        <GoogleOAuthProvider clientId={googleAuthClientId}>
           {children}
           <Toaster />
         </GoogleOAuthProvider>

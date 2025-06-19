@@ -1,4 +1,4 @@
-package com.example.backend.entity;
+package com.example.backend.entity.user;
 
 import com.example.backend.entity.project.ProjectMember;
 import jakarta.persistence.*;

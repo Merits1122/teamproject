@@ -8,13 +8,11 @@ import org.springframework.security.config.annotation.authentication.configurati
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-import org.springframework.security.web.context.NullSecurityContextRepository;
 import org.springframework.security.web.method.annotation.AuthenticationPrincipalArgumentResolver;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
@@ -25,7 +23,7 @@ import java.util.List;
 
 @Configuration
 @EnableWebSecurity
-@EnableMethodSecurity
+@EnableMethodSecurity(prePostEnabled = true)
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
@@ -45,6 +43,11 @@ public class SecurityConfig {
     }
 
     @Bean
+    public AuthenticationManager authenticationManager(AuthenticationConfiguration authenticationConfiguration) throws Exception {
+        return authenticationConfiguration.getAuthenticationManager();
+    }
+
+    @Bean
     public AuthenticationPrincipalArgumentResolver authenticationPrincipalArgumentResolver() {
         return new AuthenticationPrincipalArgumentResolver();
     }
@@ -54,30 +57,15 @@ public class SecurityConfig {
         String avatarPathPattern = avatarUrlPath.endsWith("/") ? avatarUrlPath + "**" : avatarUrlPath + "/**";
 
         http
-                // 1. HTTP Basic 인증 및 폼 로그인 방식 비활성화 (JWT만 사용하기 위함)
-                .httpBasic(AbstractHttpConfigurer::disable)
-                .formLogin(AbstractHttpConfigurer::disable)
-
-                // 2. CSRF 보호 기능 비활성화 (Stateless API에서는 불필요)
-                .csrf(AbstractHttpConfigurer::disable)
-
-                // 3. CORS 설정 적용
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-                .securityContext(context -> context
-                        .securityContextRepository(new NullSecurityContextRepository())
-                )
-                // 4. 세션을 사용하지 않는 Stateless 서버로 설정
+                .csrf(csrf -> csrf.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-
-                // 5. 요청 경로별 접근 권한 설정
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll() // Preflight 요청은 모두 허용
-                        .requestMatchers("/api/auth/**").permitAll()     // 인증 관련 경로는 모두 허용
-                        .requestMatchers(avatarPathPattern).permitAll() // 아바타 이미지 경로는 모두 허용
-                        .anyRequest().authenticated()                   // 그 외 모든 요청은 인증 필요
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                        .requestMatchers("/api/auth/**").permitAll()
+                        .requestMatchers(avatarPathPattern).permitAll()
+                        .anyRequest().authenticated()
                 )
-
-                // 6. 우리가 만든 JWT 인증 필터를 UsernamePasswordAuthenticationFilter 앞에 추가
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();

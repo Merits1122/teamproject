@@ -1,46 +1,18 @@
-// frontend/app/dashboard/page.tsx
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
-import { Clock, Users, ListChecks, ServerCrash, FolderOpen, AlertTriangle, Calendar as CalendarIcon } from "lucide-react"; // CalendarIcon으로 이름 변경 또는 Calendar 사용
+import { Clock, Users, ListChecks, FolderOpen, AlertTriangle, Calendar as CalendarIcon, Loader2, ServerCrash } from "lucide-react";
 import { CreateProjectDialog } from "@/components/projects/create-project-dialog"
-import { getToken } from "@/lib/auth"
 import { ko } from 'date-fns/locale';
-import { format, parseISO, differenceInDays, isFuture, isToday, addDays, compareAsc } from "date-fns"; // 필요한 date-fns 함수 추가
-
-// --- 타입 정의 시작 ---
-interface TaskSummaryOnDashboard {
-  id: number;
-  title: string;
-  status: "TODO" | "IN_PROGRESS" | "DONE";
-  dueDate?: string; // ISO 8601 형식 (예: "2024-12-31" 또는 "2024-12-31T15:00:00Z")
-}
-
-interface DashboardProjectMember {
-  userId: number; // 멤버의 고유 ID
-  email: string;  // 또는 다른 고유 식별자
-}
-
-interface ApiProjectOnDashboard {
-  id: number;
-  name: string;
-  description: string;
-  startDate?: string;
-  endDate?: string;
-  membersCount: number;
-  status: "TODO" | "IN_PROGRESS" | "DONE";
-  creatorUsername?: string;
-  createdAt?: string;
-  updatedAt?: string;
-  tasks: TaskSummaryOnDashboard[];
-  members: DashboardProjectMember[];
-}
+import { format, parseISO, differenceInDays, isToday, addDays, compareAsc } from "date-fns";
+import { apiCall } from "@/lib/api";
+import { useToast } from "@/hooks/use-toast";
+import { Status, ApiProject, ProjectMember } from "@/lib/types"
 
 interface FrontendProjectOnDashboard {
   id: number;
@@ -49,10 +21,10 @@ interface FrontendProjectOnDashboard {
   progress: number;
   tasksInfo: { total: number; completed: number };
   displayDueDate: string;
+  membersToDisplay: ProjectMember[];
   membersCount: number;
-  displayStatus: string; // ⬅️ 화면에 표시될 최종 상태 텍스트 (예: "진행 중")
-  status: "TODO" | "IN_PROGRESS" | "DONE";
-  creatorUsername?: string;
+  status: Status;
+  displayStatus: string;
 }
 
 interface DashboardStats {
@@ -61,29 +33,30 @@ interface DashboardStats {
   teamMembers: number;
 }
 
-interface ActivityUser { name: string; avatar: string; initials: string; }
-interface RecentActivityItem { id: number; user: ActivityUser; action: string; item: string; project: string; time: string;}
-
-// 다가오는 마감일 아이템 타입 수정
 interface UpcomingDeadlineItem {
-  id: string; // projectId-taskId
+  id: string;
   taskTitle: string;
   projectName: string;
   projectId: number;
   dueDate: Date;
-  displayDueDate: string; // 예: "내일", "3일 후"
+  displayDueDate: string; 
   isOverdue: boolean;
 }
-// --- 타입 정의 끝 ---
 
-const mapApiProjectToFrontendDashboard = (apiProject: ApiProjectOnDashboard): FrontendProjectOnDashboard => {
+const getInitials = (name?: string | null): string => {
+  if (name && name.length > 0) {
+    return name.charAt(0).toUpperCase();
+  }
+  return "U";
+};
+
+const mapApiProjectToFrontendDashboard = (apiProject: ApiProject): FrontendProjectOnDashboard => {
   const completedTasks = apiProject.tasks?.filter(task => task.status === "DONE").length || 0;
   const totalTasks = apiProject.tasks?.length || 0;
   const progress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
 
-
   let displayStatusText = "정보 없음";
-  switch (apiProject.status) { // 백엔드가 보내준 effectiveStatus 사용
+  switch (apiProject.status) { 
     case "TODO": displayStatusText = "시작 전"; break;
     case "IN_PROGRESS": displayStatusText = "진행 중"; break;
     case "DONE": displayStatusText = "완료됨"; break;
@@ -93,19 +66,19 @@ const mapApiProjectToFrontendDashboard = (apiProject: ApiProjectOnDashboard): Fr
     id: apiProject.id,
     name: apiProject.name,
     description: apiProject.description,
-    progress: progress,
+    progress,
     tasksInfo: { total: totalTasks, completed: completedTasks },
     displayDueDate: apiProject.endDate ? format(parseISO(apiProject.endDate), "PP", { locale: ko }) : "날짜 미정",
-    membersCount: apiProject.members?.length || 0,
-    displayStatus: displayStatusText,                  // ⬅️ 계산된 표시용 텍스트
-    status: apiProject.status,      // ⬅️ 업무 기반으로 계산된 상태
-    creatorUsername: apiProject.creatorUsername,
+    membersToDisplay: (apiProject.members || []).map(member => ({ ...member, initials: getInitials(member.name) })),
+    membersCount: apiProject.members?.length || 0,               
+    status: apiProject.status,
+    displayStatus: displayStatusText
   };
 };
 
 const formatUpcomingDeadlineDisplay = (dueDate: Date): string => {
-  const today = new Date(new Date().setHours(0,0,0,0)); // 오늘 날짜의 시작
-  const targetDate = new Date(new Date(dueDate).setHours(0,0,0,0)); // 마감일의 시작
+  const today = new Date(new Date().setHours(0,0,0,0)); 
+  const targetDate = new Date(new Date(dueDate).setHours(0,0,0,0));
   const diff = differenceInDays(targetDate, today);
 
   if (diff < 0) return `기한 초과 (${format(dueDate, "M월 d일")})`;
@@ -117,6 +90,7 @@ const formatUpcomingDeadlineDisplay = (dueDate: Date): string => {
 
 
 export default function DashboardPage() {
+  const { toast } = useToast(); 
   const [projects, setProjects] = useState<FrontendProjectOnDashboard[]>([])
   const [dashboardStats, setDashboardStats] = useState<DashboardStats>({
     totalProjects: 0,
@@ -126,138 +100,96 @@ export default function DashboardPage() {
   const [upcomingDeadlines, setUpcomingDeadlines] = useState<UpcomingDeadlineItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  const recentActivityData: RecentActivityItem[] = [ /* ... 기존 목업 ... */ ];
-  const [recentActivity, setRecentActivity] = useState<RecentActivityItem[]>(recentActivityData);
-
-
-  const fetchDashboardData = async () => {
+  
+  const fetchDashboardData = useCallback(async () => {
     setIsLoading(true);
     setError(null);
-    const token = getToken();
+    console.log("대시보드 데이터 조회를 시작합니다.");
+    const response = await apiCall<ApiProject[]>('/api/projects');
 
-    if (!token) {
-      setError("인증 토큰이 없습니다. 로그인해주세요.");
-      setIsLoading(false);
-      return;
-    }
-
-    try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080'}/api/projects`, {
-        headers: { "Authorization": `Bearer ${token}` }
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: "알 수 없는 서버 오류" }));
-        throw new Error(errorData.message || `데이터 조회 실패 (상태: ${response.status})`);
-      }
-
-      const apiProjects: ApiProjectOnDashboard[] = await response.json();
-
-      // 🔽 프로젝트 정렬 로직 수정
+    if (response.success) {
+      const apiProjects = response.data;
+      console.log("대시보드 데이터 API 호출 성공. 받은 데이터:", apiProjects);
+      
       const sortedApiProjects = [...apiProjects].sort((a, b) => {
         const isADone = a.status === "DONE";
         const isBDone = b.status === "DONE";
 
-        // 1. 완료 여부로 1차 정렬 (완료된 것은 뒤로)
         if (isADone && !isBDone) return 1;
         if (!isADone && isBDone) return -1;
 
-        // 2. 마감일로 2차 정렬 (둘 다 완료되었거나, 둘 다 완료되지 않은 경우에만 실행됨)
         const dateA = a.endDate ? parseISO(a.endDate) : null;
         const dateB = b.endDate ? parseISO(b.endDate) : null;
         
-        if (dateA === null && dateB === null) {
-            // 마감일이 둘 다 없으면 이름순 정렬
-            return a.name.localeCompare(b.name);
+        if (!dateA && !dateB) {
+          return a.name.localeCompare(b.name);
         }
-        if (dateA === null) return 1;  // 마감일 없는 것을 뒤로
-        if (dateB === null) return -1; // 마감일 없는 것을 뒤로
+        if (!dateA) return 1; 
+        if (!dateB) return -1;
 
-        // 마감일이 빠른 순 (오름차순)으로 정렬
-        const dateComparison = compareAsc(dateA, dateB);
-        if (dateComparison === 0) {
-            // 마감일이 같으면 이름순 정렬
-            return a.name.localeCompare(b.name);
-        }
-        return dateComparison;
+        return compareAsc(dateA, dateB) || a.name.localeCompare(b.name);
       });
-      // 🔼 프로젝트 정렬 로직 끝
-      
+    
       const frontendProjects = sortedApiProjects.map(mapApiProjectToFrontendDashboard);
       setProjects(frontendProjects);
 
-      const totalProjects = frontendProjects.length;
-      const activeTasks = frontendProjects.reduce((acc, project) => acc + (project.tasksInfo.total - project.tasksInfo.completed), 0);
-      const uniqueMemberIdentifiers = new Set<string>(); // 사용자 email 또는 id를 저장
-      apiProjects.forEach(project => {
-        project.members?.forEach(member => {
-          // member 객체에 email 이나 userId 같은 고유 식별자가 있다고 가정
-          if (member.email) { // 또는 member.userId.toString() 등 고유 식별자 사용
-            uniqueMemberIdentifiers.add(member.email.toLowerCase()); // 소문자로 통일하여 중복 방지
-          }
-        });
-      });
-      const uniqueTeamMembersCount = uniqueMemberIdentifiers.size;
+      const activeTasks = frontendProjects.reduce((acc, p) => acc + (p.tasksInfo.total - p.tasksInfo.completed), 0);
+      const uniqueMembers = new Set(apiProjects.flatMap(p => p.members.map(m => m.email)));
       
-      setDashboardStats({
-        totalProjects: totalProjects,
-        activeTasks: activeTasks,
-        teamMembers: uniqueMemberIdentifiers.size, // ⬅️ 업데이트
+      setDashboardStats({ 
+        totalProjects: frontendProjects.length, 
+        activeTasks, 
+        teamMembers: uniqueMembers.size 
       });
 
-      // --- 다가오는 마감일 처리 ---
-      const allTasksForDeadlines: UpcomingDeadlineItem[] = [];
-      const today = new Date(new Date().setHours(0,0,0,0));
-      const sevenDaysFromToday = addDays(today, 7);
+      const allDeadlines: UpcomingDeadlineItem[] = apiProjects.flatMap(p => 
+        (p.tasks || [])
+          .filter(t => t.dueDate && t.status !== 'DONE')
+          .map(t => ({...t, dueDateObj: parseISO(t.dueDate!)}))
+          .filter(t => t.dueDateObj >= new Date(new Date().setHours(0,0,0,0)) && t.dueDateObj <= addDays(new Date(), 7))
+          .map(t => ({
+            id: `${p.id}-${t.id}`, taskTitle: t.title, projectName: p.name, projectId: p.id,
+            dueDate: t.dueDateObj, displayDueDate: formatUpcomingDeadlineDisplay(t.dueDateObj),
+            isOverdue: differenceInDays(t.dueDateObj, new Date()) < 0 && !isToday(t.dueDateObj)
+          }))
+      );
+      setUpcomingDeadlines(allDeadlines.sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime()).slice(0, 5));
 
-      apiProjects.forEach(project => {
-        project.tasks?.forEach(task => {
-          if (task.dueDate) {
-            const dueDateObj = parseISO(task.dueDate); // ISO 문자열을 Date 객체로
-            // 오늘부터 7일 이내의 마감일만 필터링 (이미 지난 것은 제외)
-            if (dueDateObj >= today && dueDateObj <= sevenDaysFromToday) {
-              allTasksForDeadlines.push({
-                id: `${project.id}-${task.id}`,
-                taskTitle: task.title,
-                projectName: project.name,
-                projectId: project.id,
-                dueDate: dueDateObj,
-                displayDueDate: formatUpcomingDeadlineDisplay(dueDateObj),
-                isOverdue: differenceInDays(dueDateObj, today) < 0 && !isToday(dueDateObj) // 오늘 마감은 초과 아님
-              });
-            }
-          }
-        });
-      });
-
-      // 마감일 순으로 정렬하여 상위 3-5개 표시
-      const sortedUpcomingDeadlines = allTasksForDeadlines
-        .sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime())
-        .slice(0, 5); // 예시로 5개만
-      setUpcomingDeadlines(sortedUpcomingDeadlines);
-
-    } catch (err: any) {
-      console.error("Failed to fetch dashboard data:", err);
-      setError(err.message || "대시보드 데이터를 가져오는 중 오류가 발생했습니다.");
-      setProjects([]);
-      setUpcomingDeadlines([]);
-    } finally {
-      setIsLoading(false);
+    } else {
+      console.error("대시보드: API 호출 실패:", response.error);
+      setError(response.error.message);
     }
-  };
+    setIsLoading(false);
+  }, [toast]);
 
   useEffect(() => {
     fetchDashboardData();
-  }, []);
+  }, [fetchDashboardData]);
 
-  const handleProjectCreated = (newApiProject: ApiProjectOnDashboard) => {
-      fetchDashboardData(); // 새 프로젝트 생성 후 전체 데이터 다시 로드
+  const handleProjectCreated = (newApiProject: ApiProject) => {
+    const newUiProject = mapApiProjectToFrontendDashboard(newApiProject);
+    setProjects(prevProjects => [newUiProject, ...prevProjects]);
+    setDashboardStats(prev => ({ ...prev, totalProjects: prev.totalProjects + 1 }));
   };
 
-  
-  if (isLoading) { /* ... 로딩 UI ... */ }
-  if (error) { /* ... 에러 UI ... */ }
+  if (isLoading) {
+    return (
+      <div className="flex justify-center items-center h-[calc(100vh-200px)]">
+        <Loader2 className="h-10 w-10 animate-spin text-primary" />
+        <p className="ml-4 text-muted-foreground">대시보드 데이터를 불러오는 중...</p>
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <div className="flex flex-col justify-center items-center h-[calc(100vh-200px)] p-4 text-center">
+        <ServerCrash className="w-16 h-16 text-destructive mb-4" />
+        <h2 className="text-xl font-semibold text-destructive mb-2">오류 발생</h2>
+        <p className="text-muted-foreground mb-4">{error}</p>
+        <Button onClick={() => fetchDashboardData()}>다시 시도</Button>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-6 p-4 md:p-6">
@@ -266,7 +198,7 @@ export default function DashboardPage() {
           <h1 className="text-3xl font-bold tracking-tight">대시보드</h1>
           <p className="text-muted-foreground">환영합니다! 현재 프로젝트 현황입니다.</p>
         </div>
-        <CreateProjectDialog onProjectCreated={handleProjectCreated as (project: any) => void} />
+        <CreateProjectDialog onProjectCreated={handleProjectCreated} />
       </div>
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
@@ -290,7 +222,7 @@ export default function DashboardPage() {
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">총 팀 참여 인원</CardTitle> {/* 텍스트 변경 */}
+            <CardTitle className="text-sm font-medium">총 팀 참여 인원</CardTitle>
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -300,7 +232,12 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      <h2 className="text-xl font-semibold tracking-tight">내 프로젝트 <span className="text-sm font-normal text-muted-foreground">({projects.length > 3 ? '최근 3개' : `${projects.length}개`})</span></h2>
+      <h2 className="text-xl font-semibold tracking-tight">
+        내 프로젝트 
+        <span className="text-sm font-normal text-muted-foreground">
+          ({projects.length > 3 ? '최근 3개' : `${projects.length}개`})
+        </span>
+      </h2>
       {projects.length === 0 && !isLoading && (
          <div className="text-center py-10 border rounded-md">
             <FolderOpen className="mx-auto h-10 w-10 text-muted-foreground mb-3" />
@@ -309,7 +246,7 @@ export default function DashboardPage() {
         </div>
       )}
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        {projects.slice(0, 3).map((project) => ( // 최근 3개만 표시
+        {projects.slice(0, 3).map((project) => (
           <Link href={`/dashboard/project/${project.id}`} key={project.id} passHref>
             <Card className="h-full flex flex-col hover:shadow-lg transition-shadow duration-200 cursor-pointer">
               <CardHeader>
@@ -364,16 +301,14 @@ export default function DashboardPage() {
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">최근 활동</CardTitle>
-            <CardDescription className="text-xs">🚨 API 연동이 필요한 부분입니다.</CardDescription>
+            <CardDescription className="text-xs">API 연동 필요</CardDescription>
           </CardHeader>
           <CardContent>
-            {/* ... Recent Activity 목업 데이터 사용 ... */}
           </CardContent>
         </Card>
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">다가오는 마감</CardTitle>
-            {/* <CardDescription className="text-xs">향후 7일 이내 마감 업무</CardDescription> */}
           </CardHeader>
           <CardContent>
             {upcomingDeadlines.length > 0 ? (

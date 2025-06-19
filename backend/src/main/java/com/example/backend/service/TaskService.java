@@ -3,6 +3,10 @@ package com.example.backend.service;
 import com.example.backend.dto.TaskRequest;
 import com.example.backend.dto.TaskResponse;
 import com.example.backend.entity.*;
+import com.example.backend.entity.project.Project;
+import com.example.backend.entity.task.Task;
+import com.example.backend.entity.task.TaskPriority;
+import com.example.backend.entity.user.User;
 import com.example.backend.repository.ProjectRepository;
 import com.example.backend.repository.TaskRepository;
 import com.example.backend.repository.UserRepository;
@@ -109,6 +113,28 @@ public class TaskService {
         return new TaskResponse(updatedTask);
     }
 
+    public void updateTaskStatus(Long taskId, Status newStatus, User currentUser) {
+        logger.info("업무 상태 변경 시도 | 업무 ID: {}, 새 상태: {}, 요청자: {}", taskId, newStatus, currentUser.getEmail());
+
+        Task task = taskRepository.findById(taskId)
+                .orElseThrow(() -> new EntityNotFoundException("업무를 찾을 수 없습니다: ID " + taskId));
+
+        projectMemberService.ensureUserCanModifyTasksInProject(task.getProject(), currentUser);
+
+        Status oldStatus = task.getStatus();
+
+        if (oldStatus == newStatus) {
+            logger.info("상태가 동일하여 변경하지 않습니다.");
+            return;
+        }
+
+        task.setStatus(newStatus);
+        taskRepository.save(task);
+
+        logger.info("업무 상태 변경 완료 | 업무 ID: {}, '{}' -> '{}'", taskId, oldStatus, newStatus);
+
+        projectService.updateProjectStatus(task.getProject().getId());
+    }
     // 업무 삭제
     public void deleteTask(Long taskId, User currentUser) {
         Task task = taskRepository.findById(taskId)

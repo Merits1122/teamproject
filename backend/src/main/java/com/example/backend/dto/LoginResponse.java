@@ -1,6 +1,6 @@
 package com.example.backend.dto;
 
-import com.example.backend.entity.User;
+import com.example.backend.entity.user.User;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.Getter;
 import lombok.Setter;

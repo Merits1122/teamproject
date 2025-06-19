@@ -1,4 +1,4 @@
-package com.example.backend.entity;
+package com.example.backend.entity.user;
 
 import com.example.backend.config.crypto.CryptoConverter;
 import jakarta.persistence.*;
@@ -35,8 +35,7 @@ public class UserSecurity {
     @Column(name = "two_factor_code_expiry")
     private LocalDateTime twoFactorCodeExpiry;
 
-    @Column(name = "password_reset_token")
-    @Convert(converter = CryptoConverter.class)
+    @Column(name = "password_reset_token", unique = true)
     private String passwordResetToken;
 
     @Column(name = "password_reset_token_expiry")
