@@ -1,6 +1,8 @@
-package com.example.backend.entity;
+package com.example.backend.entity.project;
 
-import com.example.backend.entity.project.ProjectMember;
+import com.example.backend.entity.Status;
+import com.example.backend.entity.task.Task;
+import com.example.backend.entity.user.User;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;

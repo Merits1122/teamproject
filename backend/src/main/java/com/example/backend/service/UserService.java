@@ -4,12 +4,14 @@ import com.example.backend.dto.ChangePasswordRequest;
 import com.example.backend.dto.SignupRequest;
 import com.example.backend.dto.UserProfileRequest;
 import com.example.backend.dto.UserProfileResponse;
-import com.example.backend.entity.User;
-import com.example.backend.entity.UserProfile;
-import com.example.backend.entity.UserSecurity;
+import com.example.backend.entity.user.User;
+import com.example.backend.entity.user.UserProfile;
+import com.example.backend.entity.user.UserSecurity;
 import com.example.backend.repository.UserProfileRepository;
 import com.example.backend.repository.UserRepository;
 import com.example.backend.repository.UserSecurityRepository;
+import com.example.backend.security.CustomUserDetails;
+import jakarta.persistence.EntityNotFoundException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
@@ -17,7 +19,6 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.DisabledException;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
@@ -31,7 +32,6 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
-import java.util.Collections;
 import java.util.UUID;
 
 @Service
@@ -44,7 +44,6 @@ public class UserService implements UserDetailsService {
     private final EmailService emailService;
     private final StorageService storageService;
     private final UserSecurityRepository userSecurityRepository;
-    private final UserProfileRepository userProfileRepository;
 
     @Value("${frontend.reset-password.url}")
     private String resetPasswordUrlBase;
@@ -70,7 +69,6 @@ public class UserService implements UserDetailsService {
         this.emailService = emailService;
         this.storageService = storageService;
         this.userSecurityRepository = userSecurityRepository;
-        this.userProfileRepository = userProfileRepository;
     }
 
 
@@ -119,19 +117,18 @@ public class UserService implements UserDetailsService {
     @Transactional
     public void requestPasswordReset(String email) {
         User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("해당 이메일의 사용자를 찾을 수 없습니다: " + email));
+                .orElseThrow(() -> new EntityNotFoundException("해당 이메일의 사용자를 찾을 수 없습니다: " + email));
 
         if (user != null) {
             if (user.getProvider() != User.AuthProvider.LOCAL) {
-                System.out.println("소셜 로그인 사용자는 이메일을 통한 비밀번호 재설정을 사용할 수 없습니다: " + email);
-                throw new IllegalStateException("소셜 로그인 사용자는 이 기능을 사용할 수 없습니다.");
+                throw new AccessDeniedException("소셜 로그인 사용자는 이 기능을 사용할 수 없습니다.");
             }
 
             String token = UUID.randomUUID().toString();
             UserSecurity userSecurity = user.getUserSecurity();
             userSecurity.setPasswordResetToken(token);
             userSecurity.setPasswordResetTokenExpiry(LocalDateTime.now().plusHours(1));
-            userRepository.save(user);
+            userSecurityRepository.save(userSecurity);
 
             emailService.sendPasswordResetEmail(user.getEmail(), token, resetPasswordUrlBase);
         }
@@ -214,7 +211,15 @@ public class UserService implements UserDetailsService {
             throw new IllegalArgumentException("현재 비밀번호가 일치하지 않습니다.");
         }
 
-        userSecurity.setPassword(passwordEncoder.encode(changePasswordRequest.getNewPassword()));
+        String newPassword = changePasswordRequest.getNewPassword();
+        if (newPassword.length() < 8) {
+            throw new IllegalArgumentException("새 비밀번호는 최소 8자 이상이어야 합니다.");
+        }
+        if (!newPassword.matches(".*[!@#$,./?].*")) {
+            throw new IllegalArgumentException("새 비밀번호는 특수문자(!@#$,./?)를 포함해야 합니다.");
+        }
+
+        userSecurity.setPassword(passwordEncoder.encode(newPassword));
         userSecurityRepository.save(userSecurity);
         logger.info("비밀번호 변경 성공 | 사용자: {}", currentUser.getEmail());
     }
@@ -245,11 +250,7 @@ public class UserService implements UserDetailsService {
             throw new BadCredentialsException("이메일/비밀번호 로그인을 지원하지 않는 계정입니다.");
         }
 
-        return new org.springframework.security.core.userdetails.User(
-                user.getEmail(),
-                userSecurity.getPassword(),
-                Collections.singletonList(new SimpleGrantedAuthority("ROLE_USER"))
-        );
+        return new CustomUserDetails(user);
     }
 
     @Transactional

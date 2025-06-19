@@ -3,7 +3,7 @@ package com.example.backend.controller;
 import com.example.backend.dto.ChangePasswordRequest;
 import com.example.backend.dto.UserProfileResponse;
 import com.example.backend.dto.UserProfileRequest;
-import com.example.backend.entity.User;
+import com.example.backend.entity.user.User;
 import com.example.backend.service.UserService;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
@@ -13,7 +13,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -95,15 +95,13 @@ public class UserProfileController {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("비밀번호를 변경하려면 로그인이 필요합니다.");
         }
         try {
-            logger.info("비밀번호 변경 시도 | 사용자: {}", currentUser.getEmail());
             userService.changePassword(changePasswordRequest, currentUser);
-            logger.info("비밀번호 변경 성공 | 사용자: {}", currentUser.getEmail());
             return ResponseEntity.ok("비밀번호가 성공적으로 변경되었습니다.");
-        } catch (IllegalArgumentException e) { // 현재 비밀번호 불일치
-            logger.warn("비밀번호 변경 실패 (자격 증명 오류) | 사용자: {}, 원인: {}", currentUser.getEmail(), e.getMessage());
+        } catch (IllegalArgumentException e) {
+            logger.warn("비밀번호 변경 실패 (잘못된 요청) | 사용자: {}, 원인: {}", currentUser.getEmail(), e.getMessage());
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(e.getMessage());
-        } catch (AccessDeniedException e) { // 소셜 로그인 사용자 등
-            logger.warn("비밀번호 변경 거부 | 사용자: {}, 원인: {}", currentUser.getEmail(), e.getMessage());
+        } catch (AccessDeniedException e) {
+            logger.warn("비밀번호 변경 거부 (권한 없음) | 사용자: {}, 원인: {}", currentUser.getEmail(), e.getMessage());
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(e.getMessage());
         } catch (Exception e) {
             logger.error("비밀번호 변경 중 서버 오류 발생 | 사용자: {}", currentUser.getEmail(), e);
@@ -133,6 +131,15 @@ public class UserProfileController {
         } catch (Exception e) {
             return ResponseEntity.badRequest().body("설정 중 오류가 발생했습니다: " + e.getMessage());
         }
+    }
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ResponseEntity<String> handleValidationExceptions(MethodArgumentNotValidException ex) {
+        String errorMessage = ex.getBindingResult().getAllErrors().get(0).getDefaultMessage();
+        logger.warn("유효성 검사 실패: {}", errorMessage);
+
+        return ResponseEntity.badRequest().body(errorMessage);
     }
 
 }

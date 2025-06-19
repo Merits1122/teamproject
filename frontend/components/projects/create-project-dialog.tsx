@@ -1,62 +1,35 @@
-// frontend/components/projects/create-project-dialog.tsx
 "use client"
 
 import type React from "react"
 import { useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { DatePicker } from "@/components/ui/date-picker"
 import { useToast } from "@/hooks/use-toast"
-import { Calendar, Plus } from "lucide-react"
-import { getToken } from "@/lib/auth" // 경로가 맞는지 확인해주세요!
+import { Plus } from "lucide-react"
 import { format } from "date-fns"
+import { ApiProject } from "@/lib/types"
+import { apiCall } from "@/lib/api"
 
-// --- 타입 정의 시작 ---
-interface TaskSummaryForDialog {
-  id: number;
-  title: string;
-  status: string;
-  dueDate?: string;
+interface CreateProjectDialogProps {
+  onProjectCreated: (createdProject: ApiProject) => void;
 }
 
-interface ApiProjectForDialog {
-  id: number;
-  name: string;
-  description: string;
-  startDate?: string;
-  endDate?: string;
-  status: string;
-  creatorUsername?: string;
-  createdAt?: string;
-  updatedAt?: string;
-  tasks: TaskSummaryForDialog[];
-}
-// --- 타입 정의 끝 ---
-
-export function CreateProjectDialog({ onProjectCreated }: { onProjectCreated?: (project: ApiProjectForDialog) => void }) {
+export function CreateProjectDialog({ onProjectCreated }: CreateProjectDialogProps) {
   const { toast } = useToast()
   const [isLoading, setIsLoading] = useState(false)
   const [open, setOpen] = useState(false)
 
-  const startDateInputRef = useRef<HTMLInputElement>(null); // 시작일 input ref
-  const endDateInputRef = useRef<HTMLInputElement>(null);   // 마감일 input ref
+  const startDateInputRef = useRef<HTMLInputElement>(null);
+  const endDateInputRef = useRef<HTMLInputElement>(null); 
   
   const initialFormData = {
     name: "",
     description: "",
-    startDate: format(new Date(), 'yyyy-MM-dd'), // 오늘 날짜를 문자열로
-    endDate: format(new Date(new Date().setDate(new Date().getDate() + 7)), 'yyyy-MM-dd'), // 7일 후를 문자열로
+    startDate: format(new Date(), 'yyyy-MM-dd'),
+    endDate: format(new Date(new Date().setDate(new Date().getDate() + 7)), 'yyyy-MM-dd'),
   };
   const [formData, setFormData] = useState(initialFormData)
 
@@ -86,73 +59,45 @@ export function CreateProjectDialog({ onProjectCreated }: { onProjectCreated?: (
     }
 
     setIsLoading(true)
-    const token = getToken(); // auth.ts의 getToken 사용
-    // checkTokenStatus(); // 필요시 디버깅용으로 호출
-
-    if (!token) {
-      toast({
-        title: "인증 오류",
-        description: "프로젝트를 생성하려면 로그인이 필요합니다.",
-        variant: "destructive",
-      });
-      setIsLoading(false);
-      return;
-    }
 
     const projectDataForApi = {
       name: formData.name,
       description: formData.description,
-      startDate: formData.startDate || null, // 빈 문자열이면 null로 전송
-      endDate: formData.endDate || null,   // 빈 문자열이면 null로 전송
+      startDate: formData.startDate || null,
+      endDate: formData.endDate || null, 
       status: "TODO",
     };
 
-    try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080'}/api/projects`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify(projectDataForApi),
-      });
+    const response = await apiCall<ApiProject>('/api/projects', {
+      method: 'POST',
+      body: JSON.stringify(projectDataForApi),
+    });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: "알 수 없는 서버 오류가 발생했습니다." }));
-        console.error("API Error Data:", errorData);
-        throw new Error(errorData.message || `프로젝트 생성 실패 (상태: ${response.status})`);
-      }
-
-      const createdApiProject: ApiProjectForDialog = await response.json();
-
+    if (response.success) {
+      const createdApiProject = response.data;
       toast({
         title: "프로젝트 생성 완료!",
-        description: `${createdApiProject.name} 프로젝트가 성공적으로 생성되었습니다.`,
-      })
-
+        description: `'${createdApiProject.name}' 프로젝트가 성공적으로 생성되었습니다.`,
+      });
       if (onProjectCreated) {
         onProjectCreated(createdApiProject);
       }
-
-      setFormData(initialFormData)
-      setOpen(false)
-
-    } catch (error: any) {
-      console.error("Submit Error:", error);
+      setOpen(false);
+    } else {
+      console.error("프로젝트 생성 API 호출 실패:", response.error);
       toast({
-        title: "문제가 발생했습니다",
-        description: error.message || "프로젝트를 생성할 수 없습니다. 다시 시도해주세요.",
+        title: "문제 발생",
+        description: response.error.message || "프로젝트를 생성할 수 없습니다.",
         variant: "destructive",
-      })
-    } finally {
-      setIsLoading(false)
+      });
     }
-  }
+    setIsLoading(false);
+  };
 
   const handleOpenChange = (isOpen: boolean) => {
     setOpen(isOpen);
     if (!isOpen) {
-      setFormData(initialFormData); // 다이얼로그 닫힐 때 폼 초기화
+      setFormData(initialFormData);
     }
   };
   
@@ -168,7 +113,7 @@ export function CreateProjectDialog({ onProjectCreated }: { onProjectCreated?: (
           <DialogTitle>새 프로젝트 생성</DialogTitle>
           <DialogDescription>새 프로젝트를 추가하여 작업을 추적하고 팀과 협업하세요.</DialogDescription>
         </DialogHeader>
-        <div className="grid gap-4 py-4"> {/* ⬅️ 이 div가 자식 요소들의 주된 컨테이너 */}
+        <div className="grid gap-4 py-4">
           <div className="grid gap-2">
             <Label htmlFor="project-name-dialog">프로젝트 이름</Label>
             <Input
@@ -177,6 +122,7 @@ export function CreateProjectDialog({ onProjectCreated }: { onProjectCreated?: (
               placeholder="프로젝트 이름 입력"
               value={formData.name}
               onChange={handleChange}
+              disabled={isLoading}
             />
           </div>
           <div className="grid gap-2">
@@ -187,7 +133,8 @@ export function CreateProjectDialog({ onProjectCreated }: { onProjectCreated?: (
               placeholder="프로젝트 설명 입력"
               value={formData.description}
               onChange={handleChange}
-              rows={3} // ⬅️ Textarea 행 수 조절 예시
+              rows={3}
+              disabled={isLoading}
             />
           </div>
 

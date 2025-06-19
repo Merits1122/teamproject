@@ -1,6 +1,6 @@
 package com.example.backend.dto;
 
-import com.example.backend.entity.TaskPriority;
+import com.example.backend.entity.task.TaskPriority;
 import com.example.backend.entity.Status;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;

@@ -3,42 +3,20 @@
 import type React from "react"
 import { useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { DatePicker } from "@/components/ui/date-picker"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
 import { Plus } from "lucide-react"
-import { getToken } from "@/lib/auth"
-import type { Task, CreatedTaskPayload } from "./task-board"
-import type { Member, TaskStatus, TaskPriority, ApiTaskResponse } from "@/lib/types";
-
-interface CreatedTaskResponse {
-    id: number | string;
-    title: string;
-    description?: string;
-    status: TaskStatus;
-    
-    priority: TaskPriority;
-    dueDate?: string;
-    createdAt: string;
-    // assigneeId 등 백엔드가 실제로 반환하는 필드에 맞게 추가
-}
+import { ApiTask, ProjectMember, Status, TaskPriority } from "@/lib/types";
+import { apiCall } from "@/lib/api"
 
 interface CreateTaskDialogProps {
   projectId: string;
-  members: Member[]; // task-board.tsx의 Member 타입
-  onTaskCreated?: (createdTask: CreatedTaskPayload) => void;
+  members: ProjectMember[];
+  onTaskCreated: (createdTaskData: ApiTask) => void;
 }
 
 export function CreateTaskDialog({ projectId, members, onTaskCreated }: CreateTaskDialogProps) {
@@ -49,8 +27,8 @@ export function CreateTaskDialog({ projectId, members, onTaskCreated }: CreateTa
   const initialFormData = {
     title: "",
     description: "",
-    status: "TODO" as TaskStatus,
-    assigneeId: "", // 초기값 빈 문자열 (플레이스홀더 표시용, "미배정" 상태)
+    status: "TODO" as Status,
+    assigneeId: "",
     dueDate: "",
     priority: "MEDIUM" as TaskPriority,
   };
@@ -63,23 +41,16 @@ export function CreateTaskDialog({ projectId, members, onTaskCreated }: CreateTa
 
   const handleSelectChange = (name: string, value: string) => {
     if (name === "status") {
-        setFormData((prev) => ({ ...prev, [name]: value as TaskStatus }))
+      setFormData((prev) => ({ ...prev, [name]: value as Status }))
     } else if (name === "priority") {
-        setFormData((prev) => ({ ...prev, [name]: value as TaskPriority }))
+      setFormData((prev) => ({ ...prev, [name]: value as TaskPriority }))
     } else if (name === "assigneeId") {
-        // Select에서 value가 ""로 오면 플레이스홀더가 선택된 것과 유사 (실제로는 "" 값)
-        // 이 "" 값을 그대로 assigneeId에 저장
-        setFormData((prev) => ({ ...prev, [name]: value }))
+      setFormData((prev) => ({ ...prev, [name]: value }))
     }
   }
 
-  //const handleDateChange = (date: Date | undefined) => {
-    //if (date) {
-      //setFormData((prev) => ({ ...prev, dueDate: date }))
-    //}
-  //}
   const dateInputRef = useRef<HTMLInputElement>(null);
-  
+
   const handleSubmit = async () => {
     if (!formData.title.trim()) {
       toast({
@@ -87,21 +58,10 @@ export function CreateTaskDialog({ projectId, members, onTaskCreated }: CreateTa
         description: "업무 제목을 입력해주세요.",
         variant: "destructive",
       })
-      return
+      return;
     }
 
     setIsLoading(true);
-    const token = getToken();
-
-    if (!token) {
-      toast({
-        title: "인증 오류",
-        description: "업무를 생성하려면 로그인이 필요합니다.",
-        variant: "destructive",
-      });
-      setIsLoading(false);
-      return;
-    }
 
     const taskDataForApi = {
       title: formData.title,
@@ -109,53 +69,44 @@ export function CreateTaskDialog({ projectId, members, onTaskCreated }: CreateTa
       status: formData.status,
       priority: formData.priority,
       dueDate: formData.dueDate || null,
-      // assigneeId는 백엔드 API 명세에 따라 포함 여부 및 타입 결정
-      // formData.assigneeId가 "" 이면 null 또는 undefined로 보내거나, 아예 안 보낼 수 있음
       assigneeId: formData.assigneeId ? parseInt(formData.assigneeId) : undefined,
     };
 
-    try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080'}/api/projects/${projectId}/tasks`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify(taskDataForApi),
-      });
+    const response = await apiCall<ApiTask>(`/api/projects/${projectId}/tasks`, {
+      method: 'POST',
+      body: JSON.stringify(taskDataForApi),
+    });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: "알 수 없는 서버 오류" }));
-        throw new Error(errorData.message || `업무 생성 실패 (상태: ${response.status})`);
-      }
-
-      const createdTaskFromApi: CreatedTaskPayload = await response.json();
-
+    if (response.success) {
+      const createdTask = response.data;
       toast({
         title: "업무 생성 완료!",
-        description: `${createdTaskFromApi.title} 업무가 성공적으로 생성되었습니다.`,
-      })
-
+        description: `'${createdTask.title}' 업무가 성공적으로 생성되었습니다.`,
+      });
       if (onTaskCreated) {
-        onTaskCreated(createdTaskFromApi); // ⬅️ API 응답 객체 그대로 전달
+        onTaskCreated(createdTask);
       }
-
-      setFormData(initialFormData);
       setOpen(false);
-
-    } catch (error: any) {
+    } else {
+      console.error("업무 생성 API 호출 실패:", response.error);
       toast({
-        title: "문제가 발생했습니다",
-        description: error.message || "업무를 생성할 수 없습니다. 다시 시도해주세요.",
+        title: "문제 발생",
+        description: response.error.message || "업무를 생성할 수 없습니다.",
         variant: "destructive",
-      })
-    } finally {
-      setIsLoading(false)
+      });
     }
-  }
+    setIsLoading(false);
+  };
+
+  const handleOpenChange = (isOpen: boolean) => {
+    setOpen(isOpen);
+    if (!isOpen) {
+      setFormData(initialFormData); 
+    }
+  };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
         <Button size="sm">
           <Plus className="mr-2 h-4 w-4" />
@@ -173,9 +124,9 @@ export function CreateTaskDialog({ projectId, members, onTaskCreated }: CreateTa
             <Input
               id="task-title-create"
               name="title"
-              placeholder="업무 제목 입력"
               value={formData.title}
               onChange={handleChange}
+              disabled={isLoading}
             />
           </div>
           <div className="grid gap-2">
@@ -183,10 +134,10 @@ export function CreateTaskDialog({ projectId, members, onTaskCreated }: CreateTa
             <Textarea
               id="task-description-create"
               name="description"
-              placeholder="업무 상세 설명 (선택 사항)"
               value={formData.description}
               onChange={handleChange}
               rows={3}
+              disabled={isLoading}
             />
           </div>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -197,9 +148,9 @@ export function CreateTaskDialog({ projectId, members, onTaskCreated }: CreateTa
                   <SelectValue placeholder="상태 선택" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="TODO">할 일 (TODO)</SelectItem>
-                  <SelectItem value="IN_PROGRESS">진행 중 (IN_PROGRESS)</SelectItem>
-                  <SelectItem value="DONE">완료됨 (DONE)</SelectItem>
+                  <SelectItem value="TODO">할 일</SelectItem>
+                  <SelectItem value="IN_PROGRESS">진행 중</SelectItem>
+                  <SelectItem value="DONE">완료됨</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -210,9 +161,9 @@ export function CreateTaskDialog({ projectId, members, onTaskCreated }: CreateTa
                   <SelectValue placeholder="우선순위 선택" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="LOW">낮음 (Low)</SelectItem>
-                  <SelectItem value="MEDIUM">보통 (Medium)</SelectItem>
-                  <SelectItem value="HIGH">높음 (High)</SelectItem>
+                  <SelectItem value="LOW">낮음</SelectItem>
+                  <SelectItem value="MEDIUM">보통</SelectItem>
+                  <SelectItem value="HIGH">높음</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -221,24 +172,13 @@ export function CreateTaskDialog({ projectId, members, onTaskCreated }: CreateTa
             <div className="grid gap-2">
               <Label htmlFor="task-assignee-create">담당자</Label>
               <Select 
-                value={formData.assigneeId} // 빈 문자열이면 플레이스홀더 표시
+                value={formData.assigneeId}
                 onValueChange={(value) => handleSelectChange("assigneeId", value)}
               >
                 <SelectTrigger id="task-assignee-create">
-                  {/* SelectValue의 placeholder는 Select의 value가 ""일 때 기본적으로 표시됨 */}
-                  {/* 또는 formData.assigneeId가 ""일때 명시적으로 placeholder를 보여줄 수 도 있음 */}
                   <SelectValue placeholder="담당자 선택 (선택 사항)" />
                 </SelectTrigger>
                 <SelectContent>
-                  {/* <SelectItem value="">미배정</SelectItem> 
-                    위 SelectItem은 제거합니다. 
-                    Select의 value가 ""일 때 placeholder가 "미배정" 역할을 하거나,
-                    사용자가 아무것도 선택하지 않은 상태 (즉, formData.assigneeId === "")를
-                    "미배정"으로 간주합니다.
-                    만약 명시적으로 "미배정"을 목록에서 선택해 "" 값으로 되돌리고 싶다면,
-                    다른 접근 방식(예: 별도 클리어 버튼)이나 SelectItem에 다른 고유값(예: "UNASSIGNED")을 사용해야 합니다.
-                    여기서는 플레이스홀더를 활용합니다.
-                  */}
                   {members.map((member) => (
                     <SelectItem key={member.id} value={member.id.toString()}>
                       {member.name}
@@ -249,7 +189,6 @@ export function CreateTaskDialog({ projectId, members, onTaskCreated }: CreateTa
             </div>
             <div className="grid gap-2">
               <Label htmlFor="task-due-date-create">마감일</Label>
-              {/* 🔽 클릭 영역 확장을 위해 div로 감싸고 onClick 이벤트 추가 */}
               <div 
                 className="relative cursor-pointer"
                 onClick={() => dateInputRef.current?.showPicker()}
@@ -260,8 +199,8 @@ export function CreateTaskDialog({ projectId, members, onTaskCreated }: CreateTa
                   name="dueDate"
                   value={formData.dueDate}
                   onChange={handleChange}
-                  className="w-full max-w-[150px]" // 여기는 sm:grid-cols-2 컨테이너 안이므로 w-full이 적절
-                  ref={dateInputRef} // ⬅️ ref 연결
+                  className="w-full max-w-[150px]"
+                  ref={dateInputRef}
                 />
               </div>
             </div>

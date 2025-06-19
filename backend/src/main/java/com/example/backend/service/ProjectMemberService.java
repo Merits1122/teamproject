@@ -2,14 +2,16 @@ package com.example.backend.service;
 
 import com.example.backend.dto.InviteUserRequest;
 import com.example.backend.dto.ProjectMemberResponse;
-import com.example.backend.entity.Project;
-import com.example.backend.entity.User;
-import com.example.backend.entity.UserProfile;
+import com.example.backend.entity.project.Project;
+import com.example.backend.entity.task.Task;
+import com.example.backend.entity.user.User;
+import com.example.backend.entity.user.UserProfile;
 import com.example.backend.entity.project.ProjectInvitationStatus;
 import com.example.backend.entity.project.ProjectMember;
 import com.example.backend.entity.project.ProjectRole;
 import com.example.backend.repository.ProjectMemberRepository;
 import com.example.backend.repository.ProjectRepository;
+import com.example.backend.repository.TaskRepository;
 import com.example.backend.repository.UserRepository;
 import jakarta.persistence.EntityNotFoundException;
 import org.slf4j.Logger;
@@ -36,6 +38,7 @@ public class ProjectMemberService {
     private final ProjectRepository projectRepository;
     private final UserRepository userRepository;
     private final EmailService emailService;
+    private final TaskRepository taskRepository;
 
     @Value("${frontend.accept-invitation.url}")
     private String acceptInvitationUrlBase;
@@ -43,11 +46,13 @@ public class ProjectMemberService {
     public ProjectMemberService(ProjectMemberRepository projectMemberRepository,
                                 ProjectRepository projectRepository,
                                 UserRepository userRepository,
-                                @Qualifier("emailServiceImpl") EmailService emailService) {
+                                @Qualifier("emailServiceImpl") EmailService emailService,
+                                TaskRepository taskRepository) {
         this.projectMemberRepository = projectMemberRepository;
         this.projectRepository = projectRepository;
         this.userRepository = userRepository;
         this.emailService = emailService;
+        this.taskRepository = taskRepository;
     }
 
     public void addProjectCreatorAsAdmin(Project project, User creator) {
@@ -98,7 +103,7 @@ public class ProjectMemberService {
                         } else if (existingMember.getInvitationStatus() == ProjectInvitationStatus.PENDING) {
                             logger.info("기존에 대기 중인 초대(ID: {})를 삭제하고 새로 생성합니다.", existingMember.getId());
                             projectMemberRepository.delete(existingMember);
-                            projectMemberRepository.flush(); // 즉시 삭제 쿼리 실행
+                            projectMemberRepository.flush();
                         }
                     });
         } else {
@@ -238,11 +243,21 @@ public class ProjectMemberService {
             throw new IllegalArgumentException("프로젝트 생성자는 추방할 수 없습니다. 역할을 변경하거나 프로젝트를 삭제하세요.");
         }
 
+        User userToRemove = memberToRemove.getUser();
+        List<Task> assignedTasks = taskRepository.findByProjectAndAssignee(project, userToRemove);
+
+        if (!assignedTasks.isEmpty()) {
+            logger.info("'{}' 프로젝트에서 사용자 '{}'에게 할당된 {}개의 업무를 '미배정'으로 변경합니다.", project.getName(), userToRemove.getEmail(), assignedTasks.size());
+            for (Task task : assignedTasks) {
+                task.setAssignee(null);
+            }
+            taskRepository.saveAll(assignedTasks);
+        }
         projectMemberRepository.delete(memberToRemove);
         logger.info("관리자 {}이 사용자 {}을 project {}에서 삭제", adminUser.getEmail(), memberToRemove.getUser().getEmail(), project.getName());
     }
 
-    //권환
+    //권한
     public void ensureUserCanModifyTasksInProject(Project project, User user) {
         logger.debug("업무 수정/생성 권한 확인 | 사용자: {}, 프로젝트: '{}'", user.getEmail(), project.getName());
 

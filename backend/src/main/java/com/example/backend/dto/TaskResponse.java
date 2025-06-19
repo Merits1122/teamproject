@@ -1,12 +1,15 @@
 package com.example.backend.dto;
 
-import com.example.backend.entity.*;
+import com.example.backend.entity.task.Task;
+import com.example.backend.entity.user.User;
+import com.example.backend.entity.user.UserProfile;
 import lombok.Getter;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Optional;
 import com.example.backend.entity.Status;
-import com.example.backend.entity.TaskPriority;
+import com.example.backend.entity.task.TaskPriority;
+import com.example.backend.entity.project.ProjectMember;
 
 @Getter
 public class TaskResponse {
@@ -17,12 +20,9 @@ public class TaskResponse {
     private final Status status;
     private final TaskPriority priority;
     private final Long projectId;
-    private final Long assigneeId;
-    private final String assigneeUsername;
-    private final String assigneeAvatarUrl;
+    private final ProjectMemberResponse assignee;
     private final LocalDateTime createdAt;
     private final LocalDateTime updatedAt;
-
 
     public TaskResponse (Task task) {
         this.id = task.getId();
@@ -39,16 +39,23 @@ public class TaskResponse {
         }
 
         if (task.getAssignee() != null) {
-            User assignee = task.getAssignee();
-            this.assigneeId = assignee.getId();
-            this.assigneeUsername = assignee.getName();
-            this.assigneeAvatarUrl = Optional.ofNullable(assignee.getUserProfile())
-                    .map(UserProfile::getAvatarUrl)
+            User assigneeUser = task.getAssignee();
+            ProjectMember memberInfo = assigneeUser.getProjectMemberships().stream()
+                    .filter(m -> m.getProject().getId().equals(task.getProject().getId()))
+                    .findFirst()
                     .orElse(null);
+
+            this.assignee = new ProjectMemberResponse(
+                    assigneeUser.getId(),
+                    assigneeUser.getName(),
+                    assigneeUser.getEmail(),
+                    memberInfo != null ? memberInfo.getRole() : null, // 역할 정보 설정
+                    Optional.ofNullable(assigneeUser.getUserProfile())
+                            .map(UserProfile::getAvatarUrl)
+                            .orElse(null)
+            );
         } else {
-            this.assigneeId = null;
-            this.assigneeUsername = null;
-            this.assigneeAvatarUrl = null;
+            this.assignee = null;
         }
 
         this.createdAt = task.getCreatedAt();

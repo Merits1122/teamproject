@@ -29,14 +29,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                                     HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
         String token = jwtTokenProvider.resolveToken(request);
-        logger.debug("토큰 요청 확인 {}: {}", request.getRequestURI(), (token != null ? "Present" : "Absent"));
+        logger.debug("토큰 요청 확인 {}: {}", request.getRequestURI(), (token != null ? "실패" : "성공"));
 
         if (token == null || !jwtTokenProvider.validateToken(token)) {
             filterChain.doFilter(request, response);
             return;
         }
 
-        // 이 아래 코드는 토큰이 유효한 경우에만 실행됨
         Authentication authentication = jwtTokenProvider.getAuthentication(token);
         if (authentication != null) {
             SecurityContextHolder.getContext().setAuthentication(authentication);

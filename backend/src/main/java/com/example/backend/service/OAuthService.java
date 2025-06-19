@@ -2,10 +2,10 @@ package com.example.backend.service;
 
 import com.example.backend.dto.GoogleLoginRequest;
 import com.example.backend.dto.LoginResponse;
-import com.example.backend.entity.User;
-import com.example.backend.entity.User.AuthProvider;
-import com.example.backend.entity.UserProfile;
-import com.example.backend.entity.UserSecurity;
+import com.example.backend.entity.user.User;
+import com.example.backend.entity.user.User.AuthProvider;
+import com.example.backend.entity.user.UserProfile;
+import com.example.backend.entity.user.UserSecurity;
 import com.example.backend.repository.UserRepository;
 import com.example.backend.security.JwtTokenProvider;
 import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;

@@ -1,22 +1,33 @@
 import { getToken, removeToken } from "./auth"
 
-type ApiResponse<T = any> = {
-  success: boolean
-  data?: T
-  message?: string
-  error?: string
-}
+type ApiResponse<T> = {
+  success: true;
+  data: T;
+} | {
+  success: false;
+  error: {
+    message: string;
+    status: number;
+  };
+};
 
-export const apiCall = async <T = any>(url: string, options: RequestInit = {}): Promise<ApiResponse<T>> => {
-  const token = getToken()
+export const apiCall = async <T = any>(
+  endpoint: string,
+  options: RequestInit = {}
+): Promise<ApiResponse<T>> => {
 
-  const defaultHeaders: HeadersInit = {
-    "Content-Type": "application/json",
-  }
+  const url = `${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080'}${endpoint}`; 
+  console.log("API 호출 주소:", url); 
+  const token = getToken();
 
+  const defaultHeaders: HeadersInit = { "Content-Type": "application/json" };
   if (token) {
-    defaultHeaders.Authorization = `Bearer ${token}`
+    defaultHeaders.Authorization = `Bearer ${token}`;
   }
+  if (options.body instanceof FormData) {
+    delete defaultHeaders['Content-Type'];
+  }
+
 
   const config: RequestInit = {
     ...options,
@@ -24,56 +35,47 @@ export const apiCall = async <T = any>(url: string, options: RequestInit = {}): 
       ...defaultHeaders,
       ...options.headers,
     },
-  }
+  };
 
   try {
-    const response = await fetch(url, config)
-    const data = await response.json()
-
-    // 토큰이 만료된 경우
-    if (response.status === 401) {
-      removeToken()
-
-      // 전역 toast 표시
-      if (typeof window !== "undefined" && (window as any).showToast) {
-        ;(window as any).showToast({
-          title: "세션이 만료되었습니다",
-          description: "다시 로그인해주세요.",
-          variant: "destructive",
-        })
-      }
-
-      // 로그인 페이지로 리디렉션
-      window.location.href = "/login"
-      return { success: false, error: "Token expired" }
-    }
+    const response = await fetch(url, config);
 
     if (!response.ok) {
-      // 에러 toast 표시
-      if (typeof window !== "undefined" && (window as any).showToast) {
-        ;(window as any).showToast({
-          title: "오류가 발생했습니다",
-          description: data.message || "요청을 처리할 수 없습니다.",
-          variant: "destructive",
-        })
+       const isAuthRoute = endpoint.startsWith('/api/auth/');
+      if ((response.status === 401 || response.status === 403) && !isAuthRoute) {
+        removeToken();
+        window.location.href = '/login?error=session_expired'; 
+        return { success: false, error: { message: '세션이 만료되었습니다. 다시 로그인해주세요.', status: 401 } };
       }
 
-      return { success: false, error: data.message || "Request failed" }
+      const errorText = await response.text();
+      return { 
+        success: false, 
+        error: { 
+          message: errorText || `서버 오류가 발생했습니다. (상태: ${response.status})`, 
+          status: response.status 
+        } 
+      };
     }
-
-    return { success: true, data }
-  } catch (error) {
-    console.error("API call failed:", error)
-
-    // 네트워크 에러 toast 표시
-    if (typeof window !== "undefined" && (window as any).showToast) {
-      ;(window as any).showToast({
-        title: "네트워크 오류",
-        description: "인터넷 연결을 확인해주세요.",
-        variant: "destructive",
-      })
+    
+    const responseBody = await response.text();
+    if (!responseBody) {
+        return { success: true, data: null as T };
     }
-
-    return { success: false, error: "Network error" }
+    try {
+      const data = JSON.parse(responseBody);
+      return { success: true, data };
+    } catch (e) {
+        return { success: true, data: responseBody as T };
+    }
+  } catch (error: any) {
+    console.error("네트워크 오류 발생:", error);
+    return {
+      success: false,
+      error: {
+        message: "서버에 연결할 수 없습니다. 네트워크 연결을 확인해주세요.",
+        status: 0,
+      },
+    };
   }
-}
+};

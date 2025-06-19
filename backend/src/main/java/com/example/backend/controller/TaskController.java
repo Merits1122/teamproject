@@ -2,8 +2,9 @@ package com.example.backend.controller;
 
 import com.example.backend.dto.TaskRequest;
 import com.example.backend.dto.TaskResponse;
+import com.example.backend.dto.TaskStatusUpdateRequest;
 import com.example.backend.service.TaskService;
-import com.example.backend.entity.User;
+import com.example.backend.entity.user.User;
 import jakarta.persistence.EntityNotFoundException;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -85,6 +86,28 @@ public class TaskController {
         } catch (Exception e) {
             logger.error("업무 수정 중 서버 오류 발생 | 업무 ID: {}", taskId, e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("업무 수정 중 오류가 발생했습니다.");
+        }
+    }
+
+    @PutMapping("/tasks/{taskId}/status")
+    public ResponseEntity<?> updateTaskStatus(
+            @PathVariable Long taskId,
+            @Valid @RequestBody TaskStatusUpdateRequest request,
+            @AuthenticationPrincipal User currentUser) {
+
+        if (currentUser == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("로그인이 필요합니다.");
+        }
+        try {
+            taskService.updateTaskStatus(taskId, request.getStatus(), currentUser);
+            return ResponseEntity.ok().body("업무 상태가 성공적으로 변경되었습니다.");
+        } catch (EntityNotFoundException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(e.getMessage());
+        } catch (AccessDeniedException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(e.getMessage());
+        } catch (Exception e) {
+            logger.error("업무 상태 변경 중 서버 오류 발생 | 업무 ID: {}", taskId, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("업무 상태 변경 중 오류가 발생했습니다.");
         }
     }
 
