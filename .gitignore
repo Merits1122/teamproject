@@ -20,4 +20,5 @@ backend/node_modules/ #
 .env
 frontend/.en
 
-*.zip
+# VS Code editor settings
+.vscode/
