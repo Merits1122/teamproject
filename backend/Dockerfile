@@ -11,10 +11,11 @@ RUN ./gradlew dependencies
 
 COPY src src
 
+RUN chmod +x ./gradlew
 RUN ./gradlew build -x test
 
 
-FROM openjdk:17-jre-slim
+FROM openjdk:17-slim
 
 WORKDIR /app
 
