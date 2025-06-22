@@ -1,6 +1,7 @@
 package com.example.backend.entity.project;
 
 import com.example.backend.entity.Status;
+import com.example.backend.entity.activitylog.ActivityLog;
 import com.example.backend.entity.task.Task;
 import com.example.backend.entity.user.User;
 import jakarta.persistence.*;
@@ -60,4 +61,8 @@ public class Project {
     @OneToMany(mappedBy = "project", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @Builder.Default
     private List<ProjectMember> members = new ArrayList<>();
+
+    @OneToMany(mappedBy = "project", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private List<ActivityLog> activityLogs = new ArrayList<>();
 }

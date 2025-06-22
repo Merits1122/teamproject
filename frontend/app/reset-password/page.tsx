@@ -195,9 +195,6 @@ export default function ResetPasswordPageContainer() {
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1 text-center">
           <CardTitle className="text-2xl font-bold">새 비밀번호 설정</CardTitle>
-            <CardDescription>
-              URL의 토큰이 유효한 경우 새 비밀번호를 설정할 수 있습니다.
-            </CardDescription>
         </CardHeader>
         <Suspense fallback={
           <div className="p-8 text-center">

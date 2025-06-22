@@ -9,10 +9,12 @@ import { Badge } from "@/components/ui/badge";
 import { Clock, Users, ListChecks, FolderOpen, AlertTriangle, Calendar as CalendarIcon, Loader2, ServerCrash } from "lucide-react";
 import { CreateProjectDialog } from "@/components/projects/create-project-dialog"
 import { ko } from 'date-fns/locale';
-import { format, parseISO, differenceInDays, isToday, addDays, compareAsc } from "date-fns";
+import { format, parseISO, differenceInDays, isToday, addDays, compareAsc, formatDistanceToNow, differenceInSeconds } from "date-fns";
 import { apiCall } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
-import { Status, ApiProject, ProjectMember } from "@/lib/types"
+import { Status, ApiProject, ProjectMember, ApiActivityLog } from "@/lib/types"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { useRevalidateOnFocus } from "@/hooks/use-revalidate-on-focus"
 
 interface FrontendProjectOnDashboard {
   id: number;
@@ -48,6 +50,15 @@ const getInitials = (name?: string | null): string => {
     return name.charAt(0).toUpperCase();
   }
   return "U";
+};
+
+const formatCommentTimestamp = (timestamp?: string): string => {
+    if (!timestamp) return "방금 전";
+    const date = parseISO(timestamp);
+    if (differenceInSeconds(new Date(), date) < 60) {
+        return "방금 전";
+    }
+    return formatDistanceToNow(date, { addSuffix: true, locale: ko });
 };
 
 const mapApiProjectToFrontendDashboard = (apiProject: ApiProject): FrontendProjectOnDashboard => {
@@ -100,16 +111,18 @@ export default function DashboardPage() {
   const [upcomingDeadlines, setUpcomingDeadlines] = useState<UpcomingDeadlineItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [recentActivities, setRecentActivities] = useState<ApiActivityLog[]>([]);
   
   const fetchDashboardData = useCallback(async () => {
     setIsLoading(true);
     setError(null);
-    console.log("대시보드 데이터 조회를 시작합니다.");
-    const response = await apiCall<ApiProject[]>('/api/projects');
+    const [projectsResponse, activitiesResponse] = await Promise.all([
+        apiCall<ApiProject[]>('/api/projects'),
+        apiCall<ApiActivityLog[]>('/api/dashboard/activitylog')
+      ]);
 
-    if (response.success) {
-      const apiProjects = response.data;
-      console.log("대시보드 데이터 API 호출 성공. 받은 데이터:", apiProjects);
+    if (projectsResponse.success) {
+      const apiProjects = projectsResponse.data;
       
       const sortedApiProjects = [...apiProjects].sort((a, b) => {
         const isADone = a.status === "DONE";
@@ -156,11 +169,19 @@ export default function DashboardPage() {
       setUpcomingDeadlines(allDeadlines.sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime()).slice(0, 5));
 
     } else {
-      console.error("대시보드: API 호출 실패:", response.error);
-      setError(response.error.message);
+      console.error("대시보드: API 호출 실패:", projectsResponse.error);
+      setError(projectsResponse.error.message);
+    }
+
+    if (activitiesResponse.success) {
+      setRecentActivities(activitiesResponse.data);
+    } else {
+      console.warn("최근 활동 로드 실패:", activitiesResponse.error.message);
     }
     setIsLoading(false);
   }, [toast]);
+
+  useRevalidateOnFocus(fetchDashboardData);
 
   useEffect(() => {
     fetchDashboardData();
@@ -296,14 +317,38 @@ export default function DashboardPage() {
         </div>
       )}
 
-
       <div className="grid gap-6 md:grid-cols-2 mt-4">
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">최근 활동</CardTitle>
-            <CardDescription className="text-xs">API 연동 필요</CardDescription>
           </CardHeader>
           <CardContent>
+            <div className="space-y-4">
+              {recentActivities.length > 0 ? (
+                recentActivities.map((activity) => (
+                  <div key={activity.id} className="flex items-start gap-3">
+                    <Avatar className="h-9 w-9">
+                      <AvatarImage src={activity.userAvatarUrl || undefined} />
+                      <AvatarFallback>{getInitials(activity.userName)}</AvatarFallback>
+                    </Avatar>
+                    <div className="space-y-1 text-sm">
+                      <p dangerouslySetInnerHTML={{ __html: activity.message }} />
+                      <div className="flex items-center text-xs text-muted-foreground">
+                        <Link href={`/dashboard/project/${activity.projectId}`} className="font-semibold hover:underline">
+                          {activity.projectName}
+                        </Link>
+                        <span className="mx-1.5">•</span>
+                        <span>
+                          {formatCommentTimestamp(activity.createdAt)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-muted-foreground text-center py-4">최근 활동이 없습니다.</p>
+              )}
+            </div>
           </CardContent>
         </Card>
         <Card>
@@ -318,7 +363,7 @@ export default function DashboardPage() {
                   <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted flex-shrink-0">
                     {deadline.isOverdue ? <AlertTriangle className="h-4 w-4 text-destructive" /> : <CalendarIcon className="h-4 w-4 text-muted-foreground" />}
                   </div>
-                  <div className="space-y-0.5 text-sm">
+                  <div className="space-y-1 text-sm">
                     <Link href={`/dashboard/project/${deadline.projectId}?task=${deadline.id.split('-')[1]}`} className="hover:underline">
                         <p className="font-medium">{deadline.taskTitle}</p>
                     </Link>

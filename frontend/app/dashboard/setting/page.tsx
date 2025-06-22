@@ -53,7 +53,8 @@ export default function SettingsPage() {
       name: "", 
       email: "", 
       introduce: "", 
-      avatarUrl: null 
+      avatarUrl: null,
+      provider: 'LOCAL',
     },
     security: { 
       currentPassword: "", 
@@ -69,10 +70,8 @@ export default function SettingsPage() {
   const fetchUserProfile = useCallback(async () => {
     setIsFetching(true);
     setError(null);
-    console.log("설정 페이지: 프로필 정보 조회를 시작합니다.");
     const response = await apiCall<UserProfile>('/api/user/profile');
     if (response.success) {
-      console.log("프로필 정보 조회 성공:", response.data);
       setState(prev => ({
         ...prev,
         profile: response.data,
@@ -167,6 +166,9 @@ export default function SettingsPage() {
       newErrors.confirmPassword = "비밀번호 확인을 입력해주세요.";
     } else if (newPassword && newPassword !== confirmPassword) {
       newErrors.confirmPassword = "새 비밀번호와 일치하지 않습니다.";
+    }
+    if (newPassword && currentPassword === newPassword) {
+      newErrors.newPassword = "새 비밀번호는 현재 비밀번호와 달라야 합니다.";
     }
     
     if (Object.keys(newErrors).length > 0 && (newErrors.currentPassword || newErrors.newPassword || newErrors.confirmPassword)) {
@@ -313,7 +315,7 @@ export default function SettingsPage() {
                 <Textarea
                   id="profile-introduce"
                   name="introduce"
-                  value={state.profile.introduce}
+                  value={state.profile.introduce || ""}
                   onChange={handleProfileChange}
                   placeholder="자신에 대해 간략히 소개해주세요."
                   rows={4}
@@ -331,57 +333,71 @@ export default function SettingsPage() {
         </TabsContent>
 
         <TabsContent value="security" className="mt-6 space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>비밀번호 변경</CardTitle>
-              <CardDescription>계정 보안을 위해 정기적으로 비밀번호를 변경하세요.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-2">
-                <Label htmlFor="current-password">현재 비밀번호</Label>
-                <Input 
-                id="current-password" 
-                name="currentPassword" 
-                type="password" 
-                value={state.security.currentPassword} 
-                onChange={handleSecurityChange} 
-                disabled={isSaving}
-                />
-                 {passwordErrors.currentPassword && <p className="text-sm text-destructive mt-1">{passwordErrors.currentPassword}</p>}
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="new-password">새 비밀번호</Label>
-                <Input 
-                id="new-password"
-                name="newPassword" 
-                type="password" 
-                value={state.security.newPassword} 
-                onChange={handleSecurityChange} 
-                disabled={isSaving}
-                />
-                {passwordErrors.newPassword && <p className="text-sm text-destructive mt-1">{passwordErrors.newPassword}</p>}
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="confirm-password">비밀번호 확인</Label>
-                <Input 
-                id="confirm-password" 
-                name="confirmPassword" 
-                type="password" 
-                value={state.security.confirmPassword} 
-                onChange={handleSecurityChange} 
-                disabled={isSaving}
-                />
-                {passwordErrors.confirmPassword && <p className="text-sm text-destructive mt-1">{passwordErrors.confirmPassword}</p>}
-              </div>
-              {passwordErrors.general && <p className="text-sm text-destructive text-center pt-2">{passwordErrors.general}</p>}
-            </CardContent>
-            <CardFooter>
-              <Button onClick={handleChangePassword} disabled={isSaving}>
-                {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                비밀번호 변경
-              </Button>
-            </CardFooter>
-          </Card>
+          {state.profile.provider === 'LOCAL' && (
+            <Card>
+              <CardHeader>
+                <CardTitle>비밀번호 변경</CardTitle>
+                <CardDescription>계정 보안을 위해 정기적으로 비밀번호를 변경하세요.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="current-password">현재 비밀번호</Label>
+                  <Input 
+                  id="current-password" 
+                  name="currentPassword" 
+                  type="password" 
+                  value={state.security.currentPassword} 
+                  onChange={handleSecurityChange} 
+                  disabled={isSaving}
+                  />
+                  {passwordErrors.currentPassword && <p className="text-sm text-destructive mt-1">{passwordErrors.currentPassword}</p>}
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="new-password">새 비밀번호</Label>
+                  <Input 
+                  id="new-password"
+                  name="newPassword" 
+                  type="password" 
+                  value={state.security.newPassword} 
+                  onChange={handleSecurityChange} 
+                  disabled={isSaving}
+                  />
+                  {passwordErrors.newPassword && <p className="text-sm text-destructive mt-1">{passwordErrors.newPassword}</p>}
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="confirm-password">비밀번호 확인</Label>
+                  <Input 
+                  id="confirm-password" 
+                  name="confirmPassword" 
+                  type="password" 
+                  value={state.security.confirmPassword} 
+                  onChange={handleSecurityChange} 
+                  disabled={isSaving}
+                  />
+                  {passwordErrors.confirmPassword && <p className="text-sm text-destructive mt-1">{passwordErrors.confirmPassword}</p>}
+                </div>
+                {passwordErrors.general && <p className="text-sm text-destructive text-center pt-2">{passwordErrors.general}</p>}
+              </CardContent>
+              <CardFooter>
+                <Button onClick={handleChangePassword} disabled={isSaving}>
+                  {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  비밀번호 변경
+                </Button>
+              </CardFooter>
+            </Card>
+          )}
+          {state.profile.provider === 'GOOGLE' && (
+            <Card>
+              <CardHeader>
+                <CardTitle>비밀번호 정보</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground">
+                  Google 계정으로 로그인하셨습니다. 비밀번호 변경은 Google에서 해주세요.
+                </p>
+              </CardContent>
+            </Card>
+          )}
           <Card>
             <CardHeader>
               <CardTitle>2단계 인증 (2FA)</CardTitle>

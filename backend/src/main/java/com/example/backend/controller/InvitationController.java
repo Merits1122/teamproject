@@ -1,6 +1,7 @@
 package com.example.backend.controller;
 
 import com.example.backend.dto.AcceptInvitationRequest;
+import com.example.backend.dto.InvitationDetailsResponse;
 import com.example.backend.entity.user.User;
 import com.example.backend.service.ProjectMemberService;
 import com.example.backend.service.UserService;
@@ -12,11 +13,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
-
+import org.springframework.web.bind.annotation.*;
 
 
 @RestController
@@ -62,5 +59,18 @@ public class InvitationController {
             logger.error("초대 수락 처리 중 예기치 않은 오류 발생 | 토큰: {}", acceptRequest.getToken(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("초대 수락 처리 중 서버에 문제가 발생했습니다.");
         }
+    }
+
+    @GetMapping("/details")
+    public ResponseEntity<InvitationDetailsResponse> getInvitationDetails(@RequestParam String token) {
+        return ResponseEntity.ok(projectMemberService.getInvitationDetails(token));
+    }
+
+    @PostMapping("/decline")
+    public ResponseEntity<Void> declineInvitation(
+            @RequestBody AcceptInvitationRequest request, // 토큰을 담는 DTO 재사용
+            @AuthenticationPrincipal User currentUser) {
+        projectMemberService.declineProjectInvitation(request.getToken(), currentUser);
+        return ResponseEntity.ok().build();
     }
 }

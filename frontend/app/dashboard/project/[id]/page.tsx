@@ -10,34 +10,34 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { UpdateProjectDialog } from "@/components/projects/update-project-dialog";
 import { DeleteProjectDialog } from "@/components/projects/delete-project-dialog";
 import { InviteTeamDialog } from "@/components/projects/invite-team-dialog";
 import { TaskBoard } from "@/components/tasks/task-board";
-import { Status, ApiProject, ApiTask, ProjectRole } from "@/lib/types";
+import { Status, ApiProject, ApiTask, ProjectRole, ApiActivityLog } from "@/lib/types";
 import { Calendar, Clock, ServerCrash, FolderKanban, Loader2, Trash2, CheckCircle } from "lucide-react";
-import { format, isPast, parseISO } from "date-fns";
+import { differenceInSeconds, format, formatDistanceToNow, isPast, parseISO } from "date-fns";
 import { ko } from "date-fns/locale";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { apiCall } from "@/lib/api";
+import { useRevalidateOnFocus } from "@/hooks/use-revalidate-on-focus";
 
-interface Activity {
-  id: number;
-  user: { name: string; avatar: string; initials: string };
-  action: string;
-  target?: "task" | "project" | "user";
-  targetName: string;
-  timestamp: string;
-}
-
-const mockActivitiesData: Activity[] = [
-];
 
 const getInitials = (name?: string | null): string => {
   if (name && name.length > 0) {
     return name.charAt(0).toUpperCase();
   }
   return "U";
+};
+
+const formatCommentTimestamp = (timestamp?: string): string => {
+    if (!timestamp) return "방금 전";
+    const date = parseISO(timestamp);
+    if (differenceInSeconds(new Date(), date) < 60) {
+        return "방금 전";
+    }
+    return formatDistanceToNow(date, { addSuffix: true, locale: ko });
 };
 
 function ProjectDetailContent() {
@@ -47,8 +47,10 @@ function ProjectDetailContent() {
   const projectId = params.id as string;
   
   const [project, setProject] = useState<ApiProject | null>(null);
-  const [tasks, setTasks] = useState<ApiTask[]>([]);
-  const [activities, setActivities] = useState<Activity[]>(mockActivitiesData);
+  const [activities, setActivities] = useState<ApiActivityLog[]>([]);
+  const [showAllActivities, setShowAllActivities] = useState(false);
+  const [activityUserFilter, setActivityUserFilter] = useState<string>("all");
+  const [activityTypeFilter, setActivityTypeFilter] = useState<string>("all");
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -66,52 +68,53 @@ function ProjectDetailContent() {
     if (showLoadingSpinner) setIsLoading(true);
     setError(null);
     
-    const response = await apiCall<ApiProject>(`/api/projects/${projectId}`);
+    try {
+      const [projectResponse, activityResponse] = await Promise.all([
+        apiCall<ApiProject>(`/api/projects/${projectId}`),
+        apiCall<ApiActivityLog[]>(`/api/projects/${projectId}/activitylog`)
+      ]);
 
-    if (response.success) {
-    setProject(response.data);
-    setTasks(response.data.tasks || []);
-  } else {
-    setError(response.error.message);
-  }
-    if (showLoadingSpinner) setIsLoading(false);
+      if (projectResponse.success) {
+        setProject(projectResponse.data);
+      } else {
+        throw new Error(projectResponse.error.message);
+      }
+
+      if (activityResponse.success) {
+        setActivities(activityResponse.data);
+      } else {
+        console.warn("활동 로그 로딩 실패:", activityResponse.error.message);
+      }
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      if (showLoadingSpinner) setIsLoading(false);
+    }
   }, [projectId]);
 
   useEffect(() => {
     if (projectId) fetchProjectData();
+    
+    const handleProjectUpdate = (event: CustomEvent) => {
+      if (!(event instanceof CustomEvent)) return;
+      const updatedProjectId = event.detail?.projectId?.toString();
+    
+      if (updatedProjectId === projectId) {
+        fetchProjectData(false);
+      }
+    };
+
+    window.addEventListener('projectDataShouldRefresh', handleProjectUpdate as EventListener);
+
+    return () => {
+        window.removeEventListener('projectDataShouldRefresh', handleProjectUpdate as EventListener);
+    };
   }, [projectId, fetchProjectData]);
 
-  const updateProjectStats = (newTasks: ApiTask[]) => {
-    setProject(prev => {
-      if (!prev) 
-        return null;
-      const completed = newTasks.filter(t => t.status === "DONE").length;
-      const total = newTasks.length;
-      const progress = total > 0 ? Math.round((completed / total) * 100) : 0;
-      return { ...prev, tasks: newTasks, progress };
-    });
-    setTasks(newTasks);
-  };
-
-  const handleTaskCreated = (createdTask: ApiTask) => {
-    const newTasks = [...tasks, createdTask];
-    console.log("업무 생성 콜백 수신 | API 업무 객체:", createdTask);
-    updateProjectStats(newTasks);
-  };
-
-  const handleTaskUpdated = (updatedTask: ApiTask) => {
-    const newTasks = tasks.map(t => t.id === updatedTask.id ? updatedTask : t);
-    updateProjectStats(newTasks);
-  };
-  
-  const handleTaskDeleted = (deletedTaskId: number | string) => {
-    const newTasks = tasks.filter(t => t.id !== deletedTaskId);
-    updateProjectStats(newTasks);
-  };
-  
+  useRevalidateOnFocus(fetchProjectData);
+  const handleDataChange = () => fetchProjectData(false);
   const handleTaskStatusChange = async (taskId: string | number, newStatus: Status) => {
     const originalTasks = project?.tasks || [];
-    console.log(`프로젝트 페이지: 업무 상태 변경 API 호출 | 업무 ID: ${taskId}, 새 상태: ${newStatus}`);
     
     setProject(prev => {
       if (!prev) return null;
@@ -145,15 +148,6 @@ function ProjectDetailContent() {
 
   const handleMemberInvited = (invitedInfo: { email: string; role: ProjectRole }) => {
     fetchProjectData(false);
-    const currentUserIdentifier = loggedInUserEmail || "Current User";
-    const newActivity: Activity = { 
-      id: Date.now(), 
-      user: { name: currentUserIdentifier, avatar: "", initials: getInitials(currentUserIdentifier) },
-      action: "멤버 초대:",
-      target: "user", 
-      targetName: invitedInfo.email,
-      timestamp: new Date().toISOString() };
-    setActivities((prevActivities) => [newActivity, ...prevActivities]);
   };
 
   const handleChangeRole = async (memberId: number, newRole: ProjectRole) => {
@@ -244,10 +238,11 @@ function ProjectDetailContent() {
     </div> 
     );
   }
-  console.log("렌더링 직전 project 상태 객체:", project);
   
+  const currentUser = project.members.find(m => m.email.toLowerCase() === loggedInUserEmail?.toLowerCase());
   const currentUserRole = project.members.find(m => m.email.toLowerCase() === loggedInUserEmail?.toLowerCase())?.role || null;
   const isAdmin = currentUserRole === "ADMIN";
+  const currentUserId = currentUser?.id;
   const canModifyTasks = currentUserRole === 'ADMIN' || currentUserRole === 'MEMBER';
   const completedTasksCount = project.tasks.filter(t => t.status === "DONE").length;
   const totalTasks = project.tasks.length;
@@ -262,6 +257,13 @@ function ProjectDetailContent() {
     case "DONE": displayProjectStatus = "완료됨"; break;
     default: displayProjectStatus = "알 수 없음";
   }
+
+  const filteredActivities = activities.filter(activity => {
+    const userMatch = activityUserFilter === "all" || activity.userId?.toString() === activityUserFilter;
+    const typeMatch = activityTypeFilter === "all" || activity.type?.startsWith(activityTypeFilter);
+    return userMatch && typeMatch;
+  });
+  const displayedActivities = showAllActivities ? filteredActivities : filteredActivities.slice(0, 10);
   
   return (
     <div className="space-y-6 p-4 md:p-6">
@@ -272,6 +274,7 @@ function ProjectDetailContent() {
         </div>
         <div className="flex items-center gap-2 flex-shrink-0 mt-2 md:mt-0">
           {isAdmin && <InviteTeamDialog projectId={projectId!} onMemberInvited={handleMemberInvited} />}
+          {isAdmin && <UpdateProjectDialog project={project} onProjectUpdated={handleDataChange} />}
           {isAdmin && <DeleteProjectDialog projectId={projectId!} projectName={project.name} onProjectDeleted={() => router.push("/dashboard")} />}
         </div>
       </div>
@@ -358,13 +361,15 @@ function ProjectDetailContent() {
         <TabsContent value="tasks" className="mt-6">
           <TaskBoard
             projectId={projectId!}
-            initialTasks={tasks}
+            initialTasks={project.tasks}
             members={project.members}
-            onTaskCreated={handleTaskCreated}
-            onTaskUpdated={handleTaskUpdated}
-            onTaskDeleted={handleTaskDeleted}
+            onTaskCreated={handleDataChange}
+            onTaskUpdated={handleDataChange}
+            onTaskDeleted={handleDataChange}
             onTaskStatusChanged={handleTaskStatusChange}      
             canModifyTasks={canModifyTasks}
+            currentUserId={currentUserId ?? 0}
+            isAdmin={isAdmin}
           />
         </TabsContent>
 
@@ -455,29 +460,74 @@ function ProjectDetailContent() {
 
         <TabsContent value="activity" className="mt-6">
           <Card>
-            <CardHeader><CardTitle>최근 활동</CardTitle><CardDescription> API 연동 필요</CardDescription></CardHeader>
-            <CardContent><div className="space-y-4">{activities.map((activity) => (
-              <div key={activity.id} className="flex items-start gap-3">
-                <Avatar className="h-8 w-8">
-                  <AvatarImage src={activity.user.avatar || undefined} alt={activity.user.name} />
-                  <AvatarFallback>{activity.user.initials}</AvatarFallback>
-                </Avatar>
-                <div className="space-y-1">
-                  <p className="text-sm">
-                    <span className="font-medium">
-                      {activity.user.name}
-                    </span> 
-                    {activity.action}{" "}{activity.target && activity.target !== "project" && <span className="font-medium">{activity.targetName}
-                    </span>}
-                    {activity.target === "project" && <span className="font-medium">이 프로젝트</span>}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    <Clock className="h-3 w-3 inline mr-1" />
-                    {format(parseISO(activity.timestamp), "PPp", { locale: ko })}
-                  </p>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>최근 활동</CardTitle>
+                  <CardDescription>이 프로젝트의 최근 활동 내역입니다.</CardDescription>
                 </div>
-              </div>))}
-            </div></CardContent>
+                <div className="flex gap-2">
+                  <Select value={activityTypeFilter} onValueChange={setActivityTypeFilter}>
+                    <SelectTrigger className="w-full sm:w-[160px]">
+                      <SelectValue placeholder="종류별 필터" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">모든 종류</SelectItem>
+                      <SelectItem value="TASK">업무 관련</SelectItem>
+                      <SelectItem value="COMMENT">댓글 관련</SelectItem>
+                      <SelectItem value="MEMBER">멤버 관련</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select value={activityUserFilter} onValueChange={setActivityUserFilter}>
+                    <SelectTrigger className="w-full sm:w-[160px]">
+                      <SelectValue placeholder="사용자별 필터" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">모든 사용자</SelectItem>
+                      {project.members.map(member => (
+                        <SelectItem key={member.id} value={member.id.toString()}>
+                          {member.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {displayedActivities.length > 0 ? (
+                  displayedActivities.map((activity) => (
+                    <div key={activity.id} className="flex items-start gap-3">
+                      <Avatar className="h-9 w-9">
+                        <AvatarImage src={activity.userAvatarUrl || undefined} />
+                        <AvatarFallback>{getInitials(activity.userName)}</AvatarFallback>
+                      </Avatar>
+                      <div className="space-y-1">
+                        <p className="text-sm" dangerouslySetInnerHTML={{ __html: activity.message }} />
+                        <p className="text-xs text-muted-foreground">
+                          <Clock className="h-3 w-3 inline mr-1" />
+                          {formatCommentTimestamp(activity.createdAt)}
+                        </p>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-muted-foreground text-center py-4">활동 내역이 없습니다.</p>
+                )}
+              </div>
+              {activities.length > 10 && (
+                <div className="mt-4 text-center">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowAllActivities(!showAllActivities)}
+                  >
+                    {showAllActivities ? "간략히 보기" : `모든 활동 내역 보기 (${activities.length}개)`}
+                  </Button>
+                </div>
+              )}
+            </CardContent>
           </Card>
         </TabsContent>
       </Tabs>

@@ -18,9 +18,11 @@ import { apiCall } from "@/lib/api"
 interface LoginResponse {
   token?: string | null;
   twoFactorRequired?: boolean;
-  message?: string;
-  username?: string;
-  email?: string;
+  user: {
+    id: number;
+    name: string;
+    email: string;
+  };
 }
 
 function LoginForm() {
@@ -63,36 +65,21 @@ function LoginForm() {
 
   
 
-  const handleLoginSuccess = useCallback((response: LoginResponse, emailFor2FA: string) => {
+  const handleLoginSuccess = useCallback((response: LoginResponse) => {
     const originalRedirectUrl = searchParams.get("redirect");
 
     if (response.twoFactorRequired) {
-      toast({ title: "2단계 인증 필요", description: response.message || "이메일로 전송된 인증 코드를 입력해주세요." });
-      let twoFactorPath = `/twofactor?email=${encodeURIComponent(emailFor2FA)}`;
-        
-      if (originalRedirectUrl) {
-        twoFactorPath += `&redirect=${encodeURIComponent(originalRedirectUrl)}`;
-      }
-        
-      router.push(twoFactorPath);
+      const twoFactorPath = `/twofactor?email=${encodeURIComponent(response.user.email)}`;
+      router.push(originalRedirectUrl ? `${twoFactorPath}&redirect=${encodeURIComponent(originalRedirectUrl)}` : twoFactorPath);
     } else if (response.token) {
-      const identifier = response.username || response.email || emailFor2FA;
       setToken(response.token, rememberMe);
-      if (identifier) {
-        if (rememberMe) localStorage.setItem("app_user_identifier", identifier);
-        else sessionStorage.setItem("app_user_identifier", identifier);
-      }
       
-
-      if (originalRedirectUrl) {
-        router.push(decodeURIComponent(originalRedirectUrl));
-      } else {
-        router.push("/dashboard");
-      }
-    } else {
-      toast({ title: "오류", description: "알 수 없는 로그인 응답입니다.", variant: "destructive"});
+      localStorage.setItem("app_user_identifier", response.user.email);
+      localStorage.setItem("app_user_id", response.user.id.toString());
+      
+      router.push(originalRedirectUrl || "/dashboard");
     }
-  }, [searchParams, rememberMe, router, toast]);
+  }, [searchParams, rememberMe, router]);
 
    const handleEmailPasswordSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
@@ -108,7 +95,7 @@ function LoginForm() {
     });
 
     if (response.success) {
-      handleLoginSuccess(response.data, formData.email);
+      handleLoginSuccess(response.data);
     } else {
       const { status, message } = response.error;
       const title = (status === 401 || status === 403) ? "로그인 실패" : "오류 발생";
@@ -133,7 +120,7 @@ function LoginForm() {
     });
 
     if (response.success) {
-      handleLoginSuccess(response.data, response.data.email || "");
+      handleLoginSuccess(response.data);
     } else {
       toast({ title: "구글 로그인 실패", description: response.error.message, variant: "destructive" });
     }
@@ -141,7 +128,7 @@ function LoginForm() {
   }, [toast, handleLoginSuccess]);
 
   const handleGoogleLoginError = () => {
-    console.error("Google Login Failed (onError callback from GoogleLogin component)");
+    console.error("구글 로그인 실패");
     toast({ title: "구글 로그인 실패", description: "구글 로그인 과정에서 라이브러리 또는 네트워크 오류가 발생했습니다.", variant: "destructive" });
     setIsGoogleLoading(false);
   };

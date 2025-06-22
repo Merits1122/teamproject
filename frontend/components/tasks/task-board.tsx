@@ -24,11 +24,13 @@ export interface TaskBoardProps {
   projectId: string;
   initialTasks?: ApiTask[];
   members: ProjectMember[];
-  onTaskCreated: (createdTask: ApiTask) => void;
-  onTaskUpdated: (updatedTask: ApiTask) => void;
-  onTaskDeleted: (deletedtaskId: string | number) => void;
+  onTaskCreated: () => void;
+  onTaskUpdated: () => void;
+  onTaskDeleted: () => void;
   onTaskStatusChanged: (taskId: string | number, newStatus: Status) => Promise<void>;
   canModifyTasks: boolean;
+  currentUserId: number;
+  isAdmin?: boolean;
 }
 
 const getInitials = (name?: string | null): string => {
@@ -47,37 +49,25 @@ export function TaskBoard({
   onTaskDeleted,
   onTaskStatusChanged,
   canModifyTasks,
+  currentUserId,
+  isAdmin,
 }: TaskBoardProps) {
-  const [tasks, setTasks] = useState<ApiTask[]>(initialTasks);
   const [selectedTask, setSelectedTask] = useState<ApiTask | null>(null);
   const [isTaskDetailOpen, setIsTaskDetailOpen] = useState(false);
+  const [isDraggingOver, setIsDraggingOver] = useState<Status | null>(null);
   const { toast } = useToast();
-  
-  useEffect(() => {
-    console.log("태스크보드: initialTasks가 변경되어 내부 tasks 상태를 업데이트합니다.", initialTasks);
-    setTasks(initialTasks);
-  }, [initialTasks]);
 
-  const todoTasks = tasks.filter((task) => task.status === "TODO");
-  const inProgressTasks = tasks.filter((task) => task.status === "IN_PROGRESS");
-  const doneTasks = tasks.filter((task) => task.status === "DONE");
+  const todoTasks = initialTasks.filter((task) => task.status === "TODO");
+  const inProgressTasks = initialTasks.filter((task) => task.status === "IN_PROGRESS");
+  const doneTasks = initialTasks.filter((task) => task.status === "DONE");
 
   const handleTaskClick = (task: ApiTask) => {
     setSelectedTask(task);
     setIsTaskDetailOpen(true);
   };
 
-  const handleTaskUpdatedFromDetail = useCallback(async (updatedTask: ApiTask) => {
-    await onTaskUpdated(updatedTask);
-    setIsTaskDetailOpen(false);
-  }, [onTaskUpdated]);
-
-  const handleTaskDeletedFromDetail = useCallback(async () => {
-    if (!selectedTask) return;
-    await onTaskDeleted(selectedTask.id);
-    setIsTaskDetailOpen(false);
-  }, [selectedTask, onTaskDeleted]);
-
+  const handleTaskUpdatedFromDetail = onTaskUpdated;
+  const handleTaskDeletedFromDetail = onTaskDeleted;
 
   useEffect(() => {
     if (!isTaskDetailOpen) {
@@ -95,31 +85,24 @@ export function TaskBoard({
     e.preventDefault();
   };
 
+  const handleDragEnter = (status: Status) => {
+    if (canModifyTasks) {
+      setIsDraggingOver(status);
+    }
+  };
+
+  const handleDragLeave = () => {
+    setIsDraggingOver(null);
+  };
+
   const handleDrop = useCallback(async (e: React.DragEvent<HTMLDivElement>, newStatus: Status) => {
     if (!canModifyTasks) return;
     e.preventDefault();
+    setIsDraggingOver(null);
     const taskId = e.dataTransfer.getData("taskId");
-    const taskToMove = tasks.find(t => t.id.toString() === taskId);
-
-    if (!taskToMove || taskToMove.status === newStatus) return;
-
-    const originalTasks = [...tasks];
-    const updatedTasks = tasks.map(t => t.id.toString() === taskId ? { ...t, status: newStatus } : t);
-    setTasks(updatedTasks);
     
-    console.log(`업무 상태 변경 시도 | 업무 ID: ${taskId}, 새 상태: ${newStatus}`);
-    
-    try {
-      await onTaskStatusChanged(taskId, newStatus);
-    } catch (error) {
-      console.error("업무 상태 변경 API 호출 실패", error);
-      toast({ 
-        title: "오류", 
-        description: "업무 상태 변경에 실패했습니다.", 
-        variant: "destructive" });
-      setTasks(originalTasks);
-    }
-  }, [canModifyTasks, tasks, onTaskStatusChanged, toast]);
+    await onTaskStatusChanged(taskId, newStatus);
+  }, [canModifyTasks, onTaskStatusChanged]);
 
   const renderTaskColumn = (title: string, columnTasks: ApiTask[], status: Status) => (
     <div className="space-y-4 p-2 bg-muted/40 rounded-lg">
@@ -127,16 +110,28 @@ export function TaskBoard({
         <h3 className="font-semibold text-base">{title}</h3>
         <Badge variant="secondary">{columnTasks.length}</Badge>
       </div>
-      <div className="space-y-3 min-h-[200px] p-1 rounded" onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, status)}>
+      <div 
+        className={`space-y-3 min-h-[1000px] p-1 rounded-md transition-colors duration-200 
+                   ${isDraggingOver === status ? 'bg-primary/10' : ''}`}
+        onDragOver={handleDragOver}
+        onDrop={(e) => handleDrop(e, status)}
+        onDragEnter={() => handleDragEnter(status)}
+        onDragLeave={handleDragLeave}
+      >
         {columnTasks.map((task) => 
-        <TaskCard 
-          key={task.id.toString()} 
-          task={task} 
-          onDragStart={handleDragStart} 
-          onTaskClick={handleTaskClick} 
-          draggable={canModifyTasks} 
-        />)}
-        {columnTasks.length === 0 && <div className="flex items-center justify-center h-24 border-2 border-dashed rounded-md"><p className="text-sm text-muted-foreground">업무 없음</p></div>}
+          <TaskCard 
+            key={task.id.toString()} 
+            task={task} 
+            onDragStart={handleDragStart} 
+            onTaskClick={handleTaskClick} 
+            draggable={canModifyTasks} 
+          />
+        )}
+        {columnTasks.length === 0 && (
+          <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
+            업무를 여기로 드래그하세요
+          </div>
+        )}
       </div>
     </div>
   );
@@ -170,6 +165,8 @@ export function TaskBoard({
           onTaskUpdated={handleTaskUpdatedFromDetail}
           onTaskDeleted={handleTaskDeletedFromDetail}
           canModify={canModifyTasks}
+          currentUserId={currentUserId}
+          isAdmin={isAdmin}
         />
       )}
     </div>

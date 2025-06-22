@@ -9,25 +9,33 @@ import lombok.Setter;
 @Setter
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class LoginResponse {
-    private String name;
     private String token;
     private boolean twoFactorRequired = false;
-    private String message;
-    private String avatarUrl;
+    private UserInfo user;
 
-    public LoginResponse(String token, User user) {
-        this.token = token;
-        this.message = "로그인에 성공했습니다.";
-        if (user != null) {
+    @Getter
+    private static class UserInfo {
+        private Long id;
+        private String name;
+        private String email;
+        private User.AuthProvider provider;
+
+        public UserInfo(User user) {
+            this.id = user.getId();
             this.name = user.getName();
-            if (user.getUserProfile() != null) {
-                this.avatarUrl = user.getUserProfile().getAvatarUrl();
-            }
+            this.email = user.getEmail();
+            this.provider = user.getProvider();
         }
     }
 
-    public LoginResponse(boolean twoFactorRequired, String message) {
+    public LoginResponse(String token, User user) {
+        this.token = token;
+        this.twoFactorRequired = false;
+        this.user = new UserInfo(user);
+    }
+
+    public LoginResponse(boolean twoFactorRequired, User user) {
         this.twoFactorRequired = twoFactorRequired;
-        this.message = message;
+        this.user = new UserInfo(user);
     }
 }

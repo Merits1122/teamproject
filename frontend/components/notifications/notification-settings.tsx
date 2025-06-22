@@ -1,53 +1,66 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
+import { ApiNotificationSettings } from "@/lib/types"
+import { apiCall } from "@/lib/api"
+import { Loader2 } from "lucide-react"
 
 export function NotificationSettings() {
   const { toast } = useToast()
-  const [settings, setSettings] = useState({
-    emailNotifications: true,
-    taskAssigned: true,
-    taskUpdated: true,
-    taskCommented: true,
-    projectInvitation: true,
-    projectUpdated: false,
-    dailyDigest: false,
-    weeklyDigest: true,
-  })
+  const [settings, setSettings] = useState<ApiNotificationSettings | null>(null);
   const [isLoading, setIsLoading] = useState(false)
+  const [isSaving, setIsSaving] = useState(false);
 
-  const handleToggle = (setting: keyof typeof settings) => {
-    setSettings((prev) => ({
-      ...prev,
-      [setting]: !prev[setting],
-    }))
-  }
+  useEffect(() => {
+    const fetchSettings = async () => {
+      setIsLoading(true);
+      const response = await apiCall<ApiNotificationSettings>('/api/user/profile/notification-settings');
+      if(response.success) {
+        setSettings(response.data);
+      } else {
+        toast({ title: "설정 로딩 실패", description: response.error.message, variant: "destructive" });
+      }
+      setIsLoading(false);
+    }
+    fetchSettings();
+  }, [toast]);
+  
+  const handleToggle = (setting: keyof ApiNotificationSettings) => {
+    if (!settings) return;
+    setSettings(prev => prev ? { ...prev, [setting]: !prev[setting] } : null);
+  };
 
   const handleSave = async () => {
-    setIsLoading(true)
+    if (!settings) return;
+    setIsSaving(true);
+    const response = await apiCall<ApiNotificationSettings>('/api/user/profile/notification-settings', {
+        method: "PUT",
+        body: JSON.stringify(settings),
+    });
 
-    try {
-      // 실제 앱에서는 API 호출을 여기서 수행합니다
-      await new Promise((resolve) => setTimeout(resolve, 1000))
-
-      toast({
-        title: "설정이 저장되었습니다",
-        description: "알림 환경설정이 업데이트되었습니다.",
-      })
-    } catch (error) {
-      toast({
-        title: "저장 실패",
-        description: "알림 설정을 저장하는 중 문제가 발생했습니다.",
-        variant: "destructive",
-      })
-    } finally {
-      setIsLoading(false)
+    if(response.success) {
+        toast({ title: "저장 완료", description: "알림 설정이 업데이트되었습니다." });
+        setSettings(response.data);
+    } else {
+        toast({ title: "저장 실패", description: response.error.message, variant: "destructive" });
     }
+    setIsSaving(false);
+  };
+
+  if (isLoading) {
+    return 
+    <div className="text-center p-8">
+      <Loader2 className="h-6 w-6 animate-spin" />
+    </div>
+  }
+  
+  if (!settings) {
+    return <div className="text-center p-8 text-destructive">알림 설정을 불러오지 못했습니다.</div>
   }
 
   return (
@@ -102,6 +115,16 @@ export function NotificationSettings() {
             </div>
 
             <div className="flex items-center justify-between">
+              <Label htmlFor="task-duedate">마감일이 임박했을 때</Label>
+              <Switch
+                id="task-duedate"
+                checked={settings.taskDueDate}
+                onCheckedChange={() => handleToggle("taskDueDate")}
+                disabled={!settings.emailNotifications}
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
               <Label htmlFor="project-invitation">프로젝트에 초대받을 때</Label>
               <Switch
                 id="project-invitation"
@@ -111,15 +134,6 @@ export function NotificationSettings() {
               />
             </div>
 
-            <div className="flex items-center justify-between">
-              <Label htmlFor="project-updated">내가 속한 프로젝트가 업데이트될 때</Label>
-              <Switch
-                id="project-updated"
-                checked={settings.projectUpdated}
-                onCheckedChange={() => handleToggle("projectUpdated")}
-                disabled={!settings.emailNotifications}
-              />
-            </div>
           </div>
         </div>
 

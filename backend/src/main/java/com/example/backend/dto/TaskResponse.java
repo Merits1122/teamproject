@@ -23,6 +23,7 @@ public class TaskResponse {
     private final ProjectMemberResponse assignee;
     private final LocalDateTime createdAt;
     private final LocalDateTime updatedAt;
+    private int comments;
 
     public TaskResponse (Task task) {
         this.id = task.getId();
@@ -60,5 +61,8 @@ public class TaskResponse {
 
         this.createdAt = task.getCreatedAt();
         this.updatedAt = task.getUpdatedAt();
+        this.comments = task.getComments() != null ? task.getComments().size() : 0;
     }
+
+
 }

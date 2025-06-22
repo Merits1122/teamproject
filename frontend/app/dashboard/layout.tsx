@@ -1,19 +1,31 @@
-import type { ReactNode } from "react"
-import { DashboardNav } from "@/components/dashboard/dashboard-nav"
-import { DashboardHeader } from "@/components/dashboard/dashboard-header"
+import { DashboardHeader } from "@/components/dashboard/dashboard-header";
+import { DashboardNav } from "@/components/dashboard/dashboard-nav";
+import { Suspense } from "react";
+import { Loader2 } from "lucide-react";
+import { RouteGuard } from "./route-guard";
 
-interface DashboardLayoutProps {
-  children: ReactNode
-}
-
-export default function DashboardLayout({ children }: DashboardLayoutProps) {
+export default function DashboardLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <div className="flex min-h-screen flex-col">
       <DashboardHeader />
       <div className="flex flex-1">
-        <DashboardNav />
-        <main className="flex-1 overflow-y-auto p-4 md:p-6">{children}</main>
+        <aside className="hidden w-64 flex-col border-r bg-muted/40 md:flex">
+          <DashboardNav />
+        </aside>
+        <main className="flex-1 p-6">
+          <Suspense fallback={
+            <div className="flex h-full items-center justify-center">
+                <Loader2 className="h-10 w-10 animate-spin" />
+            </div>
+          }>
+            <RouteGuard>{children}</RouteGuard>
+          </Suspense>
+        </main>
       </div>
     </div>
-  )
+  );
 }

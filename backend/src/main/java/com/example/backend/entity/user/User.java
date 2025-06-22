@@ -1,5 +1,6 @@
 package com.example.backend.entity.user;
 
+import com.example.backend.entity.notification.NotificationSettings;
 import com.example.backend.entity.project.ProjectMember;
 import jakarta.persistence.*;
 import lombok.*;
@@ -56,10 +57,25 @@ public class User {
 
     public void setUserProfile(UserProfile userProfile) {
         this.userProfile = userProfile;
-        userProfile.setUser(this);
+        if (userProfile != null) {
+            userProfile.setUser(this);
+        }
     }
+
     public void setUserSecurity(UserSecurity userSecurity) {
         this.userSecurity = userSecurity;
-        userSecurity.setUser(this);
+        if (userSecurity != null) {
+            userSecurity.setUser(this);
+        }
+    }
+
+    @OneToOne(mappedBy = "user", cascade = CascadeType.ALL, fetch = FetchType.LAZY, orphanRemoval = true)
+    private NotificationSettings notificationSettings;
+
+    public void setNotificationSettings(NotificationSettings notificationSettings) {
+        this.notificationSettings = notificationSettings;
+        if (notificationSettings != null) {
+            notificationSettings.setUser(this);
+        }
     }
 }

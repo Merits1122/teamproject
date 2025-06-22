@@ -1,337 +1,221 @@
-"use client"
+"use client";
 
-import type React from "react"
+import type React from "react";
+import { useState, useEffect, useCallback } from "react";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { useToast } from "@/hooks/use-toast";
+import { formatDistanceToNow, parseISO, differenceInSeconds } from "date-fns";
+import { ko } from "date-fns/locale";
+import { Loader2, MessageSquare, Send, Trash2, Edit } from "lucide-react";
+import { apiCall } from "@/lib/api";
+import { ApiComment } from "@/lib/types";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 
-import { useState } from "react"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Button } from "@/components/ui/button"
-import { Textarea } from "@/components/ui/textarea"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { useToast } from "@/hooks/use-toast"
-import { formatDistanceToNow } from "date-fns"
-import { MessageSquare, Send, Edit, Trash2 } from "lucide-react"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog"
+const getInitials = (name?: string | null): string => name ? name.charAt(0).toUpperCase() : "U";
 
-type Comment = {
-  id: number
-  user: {
-    id: number
-    name: string
-    avatar: string
-    initials: string
-  }
-  content: string
-  createdAt: string
+const formatCommentTimestamp = (timestamp?: string): string => {
+    if (!timestamp) return "방금 전";
+    const date = parseISO(timestamp);
+    if (differenceInSeconds(new Date(), date) < 60) {
+        return "방금 전";
+    }
+    return formatDistanceToNow(date, { addSuffix: true, locale: ko });
+};
+
+interface TaskCommentsProps {
+  taskId: number | string;
+  currentUserId?: number;
+  canModify: boolean;
+  isAdmin?: boolean;
+  onCommentAdded: () => void;
 }
 
-type TaskCommentsProps = {
-  taskId: number | string
-  initialComments?: Comment[]
-  onCommentAdded?: () => void
-  currentUserId?: number // 현재 사용자 ID
-  isAdmin?: boolean // 관리자 여부
-}
+export function TaskComments({ taskId, currentUserId, canModify, isAdmin, onCommentAdded }: TaskCommentsProps) {
+  const { toast } = useToast();
+  const [comments, setComments] = useState<ApiComment[]>([]);
+  const [newComment, setNewComment] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [editingCommentId, setEditingCommentId] = useState<number | null>(null);
+  const [editedContent, setEditedContent] = useState("");
 
-// 샘플 댓글 데이터
-const sampleComments: Comment[] = [
-  {
-    id: 1,
-    user: {
-      id: 1,
-      name: "홍길동",
-      avatar: "",
-      initials: "홍",
-    },
-    content: "이 작업에 대해 질문이 있습니다. 언제까지 완료해야 하나요?",
-    createdAt: "2025-01-27T10:30:00.000Z",
-  },
-  {
-    id: 2,
-    user: {
-      id: 2,
-      name: "김철수",
-      avatar: "",
-      initials: "김",
-    },
-    content: "내일까지 완료 예정입니다. 추가 리소스가 필요하면 말씀해 주세요.",
-    createdAt: "2025-01-27T11:15:00.000Z",
-  },
-]
+  const fetchComments = useCallback(async () => {
+    setIsLoading(true);
+    const response = await apiCall<ApiComment[]>(`/api/tasks/${taskId}/comments`);
+    if (response.success) {
+      setComments(response.data);
+    }
+    setIsLoading(false);
+  }, [taskId, toast]);
 
-export function TaskComments({
-  taskId,
-  initialComments = sampleComments,
-  onCommentAdded,
-  currentUserId = 1, // 기본값으로 1 설정 (실제 앱에서는 context에서 가져옴)
-  isAdmin = false, // 기본값으로 false 설정
-}: TaskCommentsProps) {
-  const { toast } = useToast()
-  const [comments, setComments] = useState<Comment[]>(initialComments)
-  const [newComment, setNewComment] = useState("")
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [editingCommentId, setEditingCommentId] = useState<number | null>(null)
-  const [editedContent, setEditedContent] = useState("")
+  useEffect(() => { fetchComments(); }, [fetchComments]);
 
   const handleAddComment = async () => {
-    if (!newComment.trim()) {
-      toast({
-        title: "댓글을 입력해주세요",
-        description: "댓글 내용을 입력한 후 전송해주세요.",
-        variant: "destructive",
-      })
-      return
+    if (!newComment.trim()) return;
+    setIsSubmitting(true);
+
+    const response = await apiCall<ApiComment>(`/api/tasks/${taskId}/comments`, {
+      method: "POST", body: JSON.stringify({ content: newComment }),
+    });
+
+    if (response.success) {
+      setComments(prev => [...prev, response.data]);
+      setNewComment("");
+      onCommentAdded();
+      toast({ 
+        description: "댓글이 등록되었습니다." 
+      });
+    } else {
+      toast({ 
+        title: "댓글 작성 실패", 
+        description: response.error.message, 
+        variant: "destructive" 
+      });
     }
-
-    setIsSubmitting(true)
-
-    try {
-      // 실제 앱에서는 API 호출을 여기서 수행합니다
-      await new Promise((resolve) => setTimeout(resolve, 1000))
-
-      const currentUser = {
-        id: 1, // 실제 앱에서는 현재 사용자 ID
-        name: "Current User", // 실제 앱에서는 현재 사용자 이름
-        avatar: "",
-        initials: "CU",
-      }
-
-      const newCommentObj: Comment = {
-        id: Math.floor(Math.random() * 1000),
-        user: currentUser,
-        content: newComment,
-        createdAt: new Date().toISOString(),
-      }
-
-      setComments((prev) => [...prev, newCommentObj])
-      setNewComment("")
-
-      if (onCommentAdded) {
-        onCommentAdded()
-      }
-
-      toast({
-        title: "댓글이 추가되었습니다",
-        description: "댓글이 성공적으로 추가되었습니다.",
-      })
-    } catch (error) {
-      toast({
-        title: "댓글 추가 실패",
-        description: "댓글을 추가하는 중 문제가 발생했습니다. 다시 시도해주세요.",
-        variant: "destructive",
-      })
-    } finally {
-      setIsSubmitting(false)
-    }
-  }
-
-  const handleEditComment = (commentId: number, content: string) => {
-    setEditingCommentId(commentId)
-    setEditedContent(content)
-  }
-
-  const handleSaveEdit = async (commentId: number) => {
-    if (!editedContent.trim()) {
-      toast({
-        title: "댓글을 입력해주세요",
-        description: "댓글 내용을 입력한 후 저장해주세요.",
-        variant: "destructive",
-      })
-      return
-    }
-
-    try {
-      // 실제 앱에서는 API 호출을 여기서 수행합니다
-      await new Promise((resolve) => setTimeout(resolve, 1000))
-
-      setComments((prev) =>
-        prev.map((comment) => (comment.id === commentId ? { ...comment, content: editedContent } : comment)),
-      )
-
-      setEditingCommentId(null)
-      setEditedContent("")
-
-      toast({
-        title: "댓글이 수정되었습니다",
-        description: "댓글이 성공적으로 수정되었습니다.",
-      })
-    } catch (error) {
-      toast({
-        title: "댓글 수정 실패",
-        description: "댓글을 수정하는 중 문제가 발생했습니다. 다시 시도해주세요.",
-        variant: "destructive",
-      })
-    }
-  }
-
-  const handleCancelEdit = () => {
-    setEditingCommentId(null)
-    setEditedContent("")
-  }
-
-  const handleDeleteComment = async (commentId: number) => {
-    try {
-      // 실제 앱에서는 API 호출을 여기서 수행합니다
-      await new Promise((resolve) => setTimeout(resolve, 1000))
-
-      setComments((prev) => prev.filter((comment) => comment.id !== commentId))
-
-      toast({
-        title: "댓글이 삭제되었습니다",
-        description: "댓글이 성공적으로 삭제되었습니다.",
-      })
-    } catch (error) {
-      toast({
-        title: "댓글 삭제 실패",
-        description: "댓글을 삭제하는 중 문제가 발생했습니다. 다시 시도해주세요.",
-        variant: "destructive",
-      })
-    }
-  }
+    setIsSubmitting(false);
+  };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-      handleAddComment()
+      e.preventDefault();
+      handleAddComment();
     }
-  }
+  };
+
+  const handleSaveEdit = async (commentId: number) => {
+    if (!editedContent.trim()) return;
+    const originalComments = [...comments];
+    const updatedComment = comments.find(c => c.id === commentId);
+    if (!updatedComment) return;
+
+    setComments(prev => prev.map(c => c.id === commentId ? { ...c, content: editedContent } : c));
+    setEditingCommentId(null);
+
+    const response = await apiCall<ApiComment>(`/api/comments/${commentId}`, {
+        method: "PUT", body: JSON.stringify({ content: editedContent }),
+    });
+
+    if (!response.success) {
+      toast({ 
+        title: "댓글 수정 실패", 
+        description: response.error.message, 
+        variant: "destructive"
+      });
+      setComments(originalComments);
+    } else {
+      toast({ description: "댓글이 수정되었습니다."});
+    }
+  };
+
+  const handleDeleteComment = async (commentId: number) => {
+    const originalComments = [...comments];
+    setComments(prev => prev.filter(c => c.id !== commentId));
+    
+    const response = await apiCall(`/api/comments/${commentId}`, { method: 'DELETE' });
+
+    if (!response.success) {
+      toast({ 
+        title: "댓글 삭제 실패", 
+        description: response.error.message, 
+        variant: "destructive"
+      });
+      setComments(originalComments);
+    } else {
+      toast({ description: "댓글이 삭제되었습니다."});
+    }
+  };
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2">
-        <MessageSquare className="h-5 w-5" />
-        <h3 className="text-lg font-semibold">댓글 ({comments.length})</h3>
-      </div>
+      <div className="flex items-center gap-2"><MessageSquare className="h-5 w-5" />
+      <h3 className="text-lg font-semibold">댓글 ({comments.length})</h3>
+    </div>
 
-      {/* 기존 댓글 목록 */}
-      {comments.length > 0 ? (
+      {isLoading ? (<div className="text-center text-muted-foreground py-4">댓글을 불러오는 중...</div>)
+      : comments.length > 0 ? (
         <div className="space-y-4">
           {comments.map((comment) => (
-            <Card key={comment.id} className="bg-muted/30">
-              <CardContent className="p-4">
-                <div className="flex gap-3">
-                  <Avatar className="h-8 w-8">
-                    <AvatarImage src={comment.user.avatar || "/placeholder.svg"} alt={comment.user.name} />
-                    <AvatarFallback>{comment.user.initials}</AvatarFallback>
-                  </Avatar>
-                  <div className="flex-1 space-y-1">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium">{comment.user.name}</span>
-                        <span className="text-xs text-muted-foreground">
-                          {formatDistanceToNow(new Date(comment.createdAt), { addSuffix: true })}
-                        </span>
-                      </div>
-                      {/* 수정/삭제 버튼 - 본인 댓글이거나 관리자인 경우에만 표시 */}
-                      {(comment.user.id === currentUserId || isAdmin) && (
-                        <div className="flex items-center gap-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-8 w-8 p-0"
-                            onClick={() => handleEditComment(comment.id, comment.content)}
-                          >
-                            <Edit className="h-4 w-4" />
-                            <span className="sr-only">댓글 수정</span>
-                          </Button>
-                          <Dialog>
-                            <DialogTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-8 w-8 p-0 text-destructive hover:text-destructive"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                                <span className="sr-only">댓글 삭제</span>
-                              </Button>
-                            </DialogTrigger>
-                            <DialogContent>
-                              <DialogHeader>
-                                <DialogTitle>댓글을 삭제하시겠습니까?</DialogTitle>
-                                <DialogDescription>
-                                  이 작업은 되돌릴 수 없습니다. 댓글이 영구적으로 삭제됩니다.
-                                </DialogDescription>
-                              </DialogHeader>
-                              <DialogFooter>
-                                <Button variant="outline">취소</Button>
-                                <Button variant="destructive" onClick={() => handleDeleteComment(comment.id)}>
-                                  삭제
-                                </Button>
-                              </DialogFooter>
-                            </DialogContent>
-                          </Dialog>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* 댓글 내용 - 편집 모드인지 확인 */}
-                    {editingCommentId === comment.id ? (
-                      <div className="space-y-2">
-                        <textarea
-                          value={editedContent}
-                          onChange={(e) => setEditedContent(e.target.value)}
-                          className="w-full min-h-[80px] p-2 text-sm border rounded-md resize-none focus:outline-none focus:ring-2 focus:ring-ring"
-                          placeholder="댓글을 수정하세요..."
-                        />
-                        <div className="flex justify-end gap-2">
-                          <Button variant="outline" size="sm" onClick={handleCancelEdit}>
-                            취소
-                          </Button>
-                          <Button size="sm" onClick={() => handleSaveEdit(comment.id)}>
-                            저장
-                          </Button>
-                        </div>
-                      </div>
-                    ) : (
-                      <p className="text-sm">{comment.content}</p>
-                    )}
+            <div key={comment.id} className="flex items-start gap-3">
+              <Avatar className="h-9 w-9">
+                <AvatarImage src={comment.user.avatarUrl || undefined} />
+                <AvatarFallback>{getInitials(comment.user.name)}</AvatarFallback>
+              </Avatar>
+              <div className="w-full">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <p className="font-semibold text-sm">{comment.user.name}</p>
+                    <p className="text-xs text-muted-foreground">{formatCommentTimestamp(comment.createdAt)}</p>
                   </div>
+                  {(currentUserId === comment.user.id || isAdmin) && (
+                    <div className="flex items-center gap-1">
+                      {currentUserId === comment.user.id && (
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditingCommentId(comment.id); setEditedContent(comment.content); }}>
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                      )}
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive/80">
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>댓글을 삭제하시겠습니까?</AlertDialogTitle>
+                            <AlertDialogDescription>이 작업은 되돌릴 수 없습니다.</AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>취소</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => handleDeleteComment(comment.id)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">삭제</AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </div>
+                  )}
                 </div>
-              </CardContent>
-            </Card>
+                {editingCommentId === comment.id ? (
+                  <div className="space-y-2 mt-2">
+                    <Textarea value={editedContent} onChange={(e) => setEditedContent(e.target.value)} className="min-h-[80px]" />
+                    <div className="flex justify-end gap-2">
+                      <Button variant="outline" size="sm" onClick={() => setEditingCommentId(null)}>취소</Button>
+                      <Button size="sm" onClick={() => handleSaveEdit(comment.id)}>저장</Button>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm mt-1 whitespace-pre-wrap">{comment.content}</p>
+                )}
+              </div>
+            </div>
           ))}
         </div>
-      ) : (
-        <Card className="bg-muted/30">
-          <CardContent className="p-8">
-            <p className="text-sm text-muted-foreground text-center">아직 댓글이 없습니다.</p>
+      ) : ( <div className="text-center text-muted-foreground py-4 border rounded-md">댓글이 없습니다.</div> )}
+
+      {canModify && (
+        <Card className="mt-6">
+          <CardHeader><CardTitle className="text-base">새 댓글 작성</CardTitle></CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              <Textarea
+                placeholder="댓글을 입력하세요... (Ctrl+Enter로 전송)"
+                value={newComment}
+                onChange={(e) => setNewComment(e.target.value)}
+                onKeyDown={handleKeyPress}
+                className="min-h-[100px]"
+                disabled={isSubmitting}
+              />
+              <div className="flex justify-end">
+                <Button onClick={handleAddComment} disabled={isSubmitting || !newComment.trim()}>
+                  {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="h-4 w-4 mr-2" />}
+                  댓글 등록
+                </Button>
+              </div>
+            </div>
           </CardContent>
         </Card>
       )}
-
-      {/* 새 댓글 작성 */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">새 댓글 작성</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <Textarea
-            placeholder="댓글을 입력하세요... (Ctrl+Enter로 전송)"
-            value={newComment}
-            onChange={(e) => setNewComment(e.target.value)}
-            onKeyDown={handleKeyPress}
-            className="min-h-[100px]"
-          />
-          <div className="flex justify-end">
-            <Button onClick={handleAddComment} disabled={isSubmitting || !newComment.trim()}>
-              {isSubmitting ? (
-                "전송 중..."
-              ) : (
-                <>
-                  <Send className="h-4 w-4 mr-2" />
-                  댓글 달기
-                </>
-              )}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
     </div>
-  )
+  );
 }

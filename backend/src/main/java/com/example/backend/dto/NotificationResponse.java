@@ -1,31 +1,55 @@
 package com.example.backend.dto;
 
 import com.example.backend.entity.notification.Notification;
-import com.example.backend.entity.notification.NotificationCategory;
-import lombok.Builder;
+import com.example.backend.entity.notification.NotificationType;
+import com.example.backend.entity.user.User;
+import com.example.backend.entity.user.UserProfile;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Getter;
-
 import java.time.LocalDateTime;
+import java.util.Optional;
 
 @Getter
-@Builder
 public class NotificationResponse {
+    private final Long id;
+    private final NotificationType type;
+    private final String title;
+    private final String description;
+    private final String link;
+    private final boolean isRead;
+    private final LocalDateTime createdAt;
+    private final UserInfo user;
 
-    private Long id;
-    private NotificationCategory category;
-    private String content;
-    private String message;
-    private String createdAt;
-    private boolean read;
-    private LocalDateTime timestamp;
+    @Getter
+    private static class UserInfo {
+        private String name;
+        private String avatarUrl;
 
-    public static NotificationResponse from(Notification notification) {
-        return NotificationResponse.builder()
-                .id(notification.getId())
-                .message(notification.getMessage())
-                .category(notification.getCategory())
-                .read(notification.isRead())
-                .timestamp(notification.getTimestamp())
-                .build();
+        public UserInfo(User user) {
+            this.name = user.getName();
+            this.avatarUrl = Optional.ofNullable(user.getUserProfile())
+                    .map(UserProfile::getAvatarUrl)
+                    .orElse(null);
+        }
+    }
+
+    public NotificationResponse(Notification notification) {
+        this.id = notification.getId();
+        this.type = notification.getType();
+        this.title = notification.getType().getDisplayName();
+        this.description = notification.getMessage();
+        this.link = notification.getLink();
+        this.isRead = notification.isRead();
+        this.createdAt = notification.getCreatedAt();
+
+        if (notification.getActor() != null) {
+            this.user = new UserInfo(notification.getActor());
+        } else {
+            this.user = null;
+        }
+    }
+    @JsonProperty("isRead")
+    public boolean isRead() {
+        return this.isRead;
     }
 }

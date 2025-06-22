@@ -1,101 +1,89 @@
 "use client"
 
-import { useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
+import { apiCall } from "@/lib/api"
+import { ApiNotification } from "@/lib/types"
+import { Loader2 } from "lucide-react"
+import { parseISO, differenceInSeconds, formatDistanceToNow } from "date-fns"
+import { ko } from "date-fns/locale"
+import Link from "next/link"
+import { useRouter } from "next/navigation"
 
-// 샘플 알림 데이터
-const initialNotifications = [
-  {
-    id: 1,
-    title: "새 댓글이 추가되었습니다",
-    description: "홍길동님이 '웹사이트 리디자인' 프로젝트에 댓글을 남겼습니다.",
-    time: "방금 전",
-    read: false,
-    type: "comment",
-    user: {
-      name: "홍길동",
-      avatar: "",
-      initials: "홍",
-    },
-  },
-  {
-    id: 2,
-    title: "작업이 할당되었습니다",
-    description: "김철수님이 '모바일 앱 개발' 프로젝트에서 작업을 할당했습니다.",
-    time: "1시간 전",
-    read: false,
-    type: "task",
-    user: {
-      name: "김철수",
-      avatar: "",
-      initials: "김",
-    },
-  },
-  {
-    id: 3,
-    title: "프로젝트 마감일 임박",
-    description: "'마케팅 캠페인' 프로젝트의 마감일이 3일 남았습니다.",
-    time: "3시간 전",
-    read: true,
-    type: "deadline",
-    user: {
-      name: "시스템",
-      avatar: "",
-      initials: "S",
-    },
-  },
-  {
-    id: 4,
-    title: "프로젝트에 초대되었습니다",
-    description: "이영희님이 '데이터 분석 대시보드' 프로젝트에 초대했습니다.",
-    time: "어제",
-    read: true,
-    type: "invitation",
-    user: {
-      name: "이영희",
-      avatar: "",
-      initials: "이",
-    },
-  },
-  {
-    id: 5,
-    title: "작업이 완료되었습니다",
-    description: "박민수님이 '모바일 앱 개발' 프로젝트의 작업을 완료했습니다.",
-    time: "2일 전",
-    read: true,
-    type: "task",
-    user: {
-      name: "박민수",
-      avatar: "",
-      initials: "박",
-    },
-  },
-]
+const getInitials = (name?: string | null): string => {
+  if (name && name.length > 0) {
+    return name.charAt(0).toUpperCase();
+  }
+  return "U";
+};
+
+const formatCommentTimestamp = (timestamp?: string): string => {
+    if (!timestamp) return "방금 전";
+    const date = parseISO(timestamp);
+    if (differenceInSeconds(new Date(), date) < 60) {
+        return "방금 전";
+    }
+    return formatDistanceToNow(date, { addSuffix: true, locale: ko });
+};
+
 
 export default function NotificationsPage() {
-  const [notifications, setNotifications] = useState(initialNotifications)
+  const router = useRouter();
+  const [notifications, setNotifications] = useState<ApiNotification[]>([]);
   const [activeTab, setActiveTab] = useState("all")
+  const [isLoading, setIsLoading] = useState(true);
 
-  const unreadCount = notifications.filter((n) => !n.read).length
+  const unreadCount = notifications.filter((n) => !n.isRead).length;
 
+  const fetchNotifications = useCallback(async () => {
+    setIsLoading(true);
+    const response = await apiCall<ApiNotification[]>('/api/notifications');
+    if (response.success) {
+      setNotifications(response.data);
+    } 
+    setIsLoading(false);
+  }, []);
+  
+  useEffect(() => {
+    fetchNotifications();
+  }, [fetchNotifications]);
+  
   const filteredNotifications = notifications.filter((notification) => {
-    if (activeTab === "all") return true
-    if (activeTab === "unread") return !notification.read
-    return notification.type === activeTab
-  })
+    if (activeTab === "all") return true;
+    if (activeTab === "unread") return !notification.isRead;
+    if (activeTab === "comment") return notification.type === "TASK_COMMENT";
+    if (activeTab === "task") return notification.type.startsWith("TASK_");
+    if (activeTab === "invitation") return notification.type === "PROJECT_INVITATION";
+    return true;
+  });
 
-  const markAsRead = (id: number) => {
-    setNotifications((prev) => prev.map((notif) => (notif.id === id ? { ...notif, read: true } : notif)))
-  }
+  const handleNotificationClick = async (notification: ApiNotification) => {
+    if (!notification.isRead) {
+      setNotifications(prev => prev.map(n => n.id === notification.id ? { ...n, isRead: true } : n));
+      await apiCall(`/api/notifications/${notification.id}/read`, { method: 'POST' });
+    }
+    window.dispatchEvent(new CustomEvent('notificationsUpdated'));
+    router.push(notification.link);
+  };
+  
+  const handleMarkAllAsRead = async () => {
+    if (unreadCount === 0) return;
+    setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+    await apiCall('/api/notifications/read-all', { method: 'POST' });
+    window.dispatchEvent(new CustomEvent('notificationsUpdated'));
+  };
 
-  const markAllAsRead = () => {
-    setNotifications((prev) => prev.map((notif) => ({ ...notif, read: true })))
+  if (isLoading) {
+    return <div className="flex h-64 items-center justify-center">
+      <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
   }
+  
 
   return (
     <div className="flex flex-col gap-6">
@@ -105,7 +93,7 @@ export default function NotificationsPage() {
           <p className="text-muted-foreground">모든 알림을 확인하고 관리하세요.</p>
         </div>
         {unreadCount > 0 && (
-          <Button variant="outline" onClick={markAllAsRead}>
+          <Button variant="outline" onClick={handleMarkAllAsRead}>
             모두 읽음 표시
           </Button>
         )}
@@ -121,12 +109,12 @@ export default function NotificationsPage() {
           </TabsTrigger>
           <TabsTrigger value="unread">
             읽지 않음
-            <Badge variant="secondary" className="ml-2">
+            <Badge variant={unreadCount > 0 ? "destructive" : "secondary"} className="ml-2">
               {unreadCount}
             </Badge>
           </TabsTrigger>
           <TabsTrigger value="comment">댓글</TabsTrigger>
-          <TabsTrigger value="task">작업</TabsTrigger>
+          <TabsTrigger value="task">업무</TabsTrigger>
           <TabsTrigger value="invitation">초대</TabsTrigger>
         </TabsList>
         <TabsContent value={activeTab} className="mt-6">
@@ -140,7 +128,7 @@ export default function NotificationsPage() {
                     : activeTab === "comment"
                       ? "댓글 알림"
                       : activeTab === "task"
-                        ? "작업 알림"
+                        ? "업무 알림"
                         : "초대 알림"}
               </CardTitle>
               <CardDescription>
@@ -153,27 +141,30 @@ export default function NotificationsPage() {
               <div className="space-y-4">
                 {filteredNotifications.length > 0 ? (
                   filteredNotifications.map((notification) => (
+                    <Link key={notification.id} href={notification.link} passHref>
                     <div
-                      key={notification.id}
                       className={cn(
                         "flex cursor-pointer items-start gap-4 rounded-lg p-3 transition-colors hover:bg-muted/50",
-                        !notification.read && "bg-muted/50",
+                        !notification.isRead && "bg-muted/50",
                       )}
-                      onClick={() => markAsRead(notification.id)}
+                      onClick={() => handleNotificationClick(notification)}
                     >
                       <Avatar className="h-10 w-10">
-                        <AvatarImage src={notification.user.avatar || ""} />
-                        <AvatarFallback>{notification.user.initials}</AvatarFallback>
+                        <AvatarImage src={notification.user?.avatarUrl || undefined} />
+                        <AvatarFallback>{getInitials(notification.user?.name)}</AvatarFallback>
                       </Avatar>
                       <div className="flex-1 space-y-1">
                         <div className="flex items-center justify-between">
                           <p className="font-medium">{notification.title}</p>
-                          <span className="text-xs text-muted-foreground">{notification.time}</span>
+                          <p className="text-xs text-muted-foreground">
+                            {formatCommentTimestamp(notification.createdAt)}
+                          </p>
                         </div>
-                        <p className="text-sm text-muted-foreground">{notification.description}</p>
+                        <p className="text-sm text-muted-foreground" dangerouslySetInnerHTML={{ __html: notification.description }} />
                       </div>
-                      {!notification.read && <div className="mt-1 h-2 w-2 rounded-full bg-primary"></div>}
+                      {!notification.isRead && <div className="mt-1 h-2 w-2 rounded-full bg-primary"></div>}
                     </div>
+                    </Link>
                   ))
                 ) : (
                   <div className="flex h-32 items-center justify-center text-muted-foreground">알림이 없습니다.</div>
@@ -186,3 +177,5 @@ export default function NotificationsPage() {
     </div>
   )
 }
+
+

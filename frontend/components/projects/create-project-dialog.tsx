@@ -152,13 +152,11 @@ export function CreateProjectDialog({ onProjectCreated }: CreateProjectDialogPro
                   value={formData.startDate}
                   onChange={handleChange}
                   ref={startDateInputRef}
-                  className="w-full max-w-[200px]"
                 />
               </div>
             </div>
             <div className="grid gap-2">
               <Label htmlFor="project-end-date-dialog">마감일</Label>
-              
               <div 
                 className="relative cursor-pointer"
                 onClick={() => endDateInputRef.current?.showPicker()}
@@ -170,7 +168,6 @@ export function CreateProjectDialog({ onProjectCreated }: CreateProjectDialogPro
                   value={formData.endDate}
                   onChange={handleChange}
                   ref={endDateInputRef}
-                  className="w-full max-w-[200px]"
                 />
               </div>
             </div>

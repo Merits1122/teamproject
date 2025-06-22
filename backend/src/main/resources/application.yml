@@ -37,6 +37,7 @@ server:
   base-url: ${SERVER_BASE_URL}
 
 frontend:
+  base-url: ${FRONTEND_BASE_URL}
   verify-email:
     url: ${FRONTEND_VERIFY_URL}
   reset-password:
@@ -61,7 +62,7 @@ google:
 
 jwt:
   secret: ${JWT_SECRET}
-  validity-in-ms: 360000
+  validity-in-ms: 3600000
 encryption:
   secret-key: ${ENCRYPTION_SECRET_KEY}
 

@@ -27,9 +27,11 @@ export interface TaskDetailDialogProps {
   projectId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onTaskUpdated: (updatedTask: ApiTask) => void; 
-  onTaskDeleted: (taskId: number | string) => void;
+  onTaskUpdated: () => void;
+  onTaskDeleted: () => void;
   canModify: boolean;
+  currentUserId: number;
+  isAdmin?: boolean
 }
 
 const parseLocalDateString = (dateString: string | null | undefined): Date | null => {
@@ -56,6 +58,8 @@ export function TaskDetailDialog({
   onTaskUpdated,
   onTaskDeleted,
   canModify,
+  currentUserId,
+  isAdmin,
 }: TaskDetailDialogProps) {
   const { toast } = useToast();
 
@@ -133,8 +137,8 @@ export function TaskDetailDialog({
       toast({ 
         title: "업무 수정됨", 
         description: "업무 정보가 성공적으로 업데이트되었습니다." });
-      onTaskUpdated(response.data);
-      setIsEditing(false);
+      onTaskUpdated();
+      onOpenChange(false);
     } else {
       toast({ 
         title: "업무 수정 실패", 
@@ -160,7 +164,8 @@ export function TaskDetailDialog({
       toast({ 
         title: "업무 삭제됨", 
         description: `"${initialTask.title}" 업무가 삭제되었습니다.`});
-      onTaskDeleted(initialTask.id);
+      onTaskDeleted();
+      onOpenChange(false);
       return true;
     } else {
       toast({ 
@@ -370,8 +375,11 @@ export function TaskDetailDialog({
           </div>
           <Separator className="my-6" />
             <TaskComments 
-              isAdmin={false} 
-              taskId={currentTask.id}
+            taskId={initialTask.id} 
+            canModify={canModify}
+            currentUserId={currentUserId}
+            isAdmin={isAdmin}
+            onCommentAdded={onTaskUpdated}
             />
         </div>
         <DialogFooter className="mt-auto pt-4 border-t">

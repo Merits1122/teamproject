@@ -15,12 +15,14 @@ public class UserProfileResponse {
     private String introduce;
     private String avatarUrl;
     private boolean twoFactorEnabled;
+    private User.AuthProvider provider;
 
     public UserProfileResponse(User user) {
         this.id = user.getId();
         this.name = user.getName();
         this.email = user.getEmail();
-
+        this.provider = user.getProvider();
+        
         UserProfile userProfile = user.getUserProfile();
         if (userProfile != null) {
             this.introduce = userProfile.getIntroduce();

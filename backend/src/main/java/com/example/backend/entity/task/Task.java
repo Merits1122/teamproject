@@ -1,6 +1,7 @@
 package com.example.backend.entity.task;
 
 import com.example.backend.entity.Status;
+import com.example.backend.entity.comment.Comment;
 import com.example.backend.entity.project.Project;
 import com.example.backend.entity.user.User;
 import jakarta.persistence.*;
@@ -12,6 +13,8 @@ import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Entity
 @Table(name = "task")
@@ -54,9 +57,6 @@ public class Task {
     @UpdateTimestamp
     private LocalDateTime updatedAt;
 
-    public Task(String title, String description, Project project) {
-        this.title = title;
-        this.description = description;
-        this.project = project;
-    }
+    @OneToMany(mappedBy = "task", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<Comment> comments = new ArrayList<>();
 }

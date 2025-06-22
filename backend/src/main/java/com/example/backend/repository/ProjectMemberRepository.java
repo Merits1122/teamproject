@@ -16,7 +16,7 @@ public interface ProjectMemberRepository extends JpaRepository<ProjectMember, Lo
     long countByProjectAndRoleAndInvitationStatus(Project project, ProjectRole role, ProjectInvitationStatus status);
     Optional<ProjectMember> findByProjectAndUserAndRoleAndInvitationStatus(Project project, User user, ProjectRole role, ProjectInvitationStatus status);
     Optional<ProjectMember> findByProjectAndUserAndInvitationStatus(Project project, User user, ProjectInvitationStatus status);
-    Optional<ProjectMember> findByProjectAndUser(Project project, User user);
     List<ProjectMember> findByProjectAndInvitationStatus(Project project, ProjectInvitationStatus status);
-    Optional<ProjectMember> findByProjectAndInvitedEmailAndInvitationStatus(Project project, String invitedEmail, ProjectInvitationStatus status);
+    List<ProjectMember> findByProjectIdAndInvitationStatus(Long projectId, ProjectInvitationStatus status);
+    Optional<ProjectMember> findByProjectIdAndInvitedEmail(Long projectId, String invitedEmail);
 }

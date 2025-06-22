@@ -20,7 +20,7 @@ export default function RootLayout({
   const googleAuthClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || "";
 
   if (!googleAuthClientId) {
-    console.error("Google Client ID is not defined in environment variables.");
+    console.error("구글 클라이언트 ID를 찾을 수 없습니다.");
   }
   return (
     <html lang="ko" suppressHydrationWarning>

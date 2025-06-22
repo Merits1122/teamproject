@@ -3,48 +3,43 @@ package com.example.backend.entity.comment;
 import com.example.backend.entity.task.Task;
 import com.example.backend.entity.user.User;
 import jakarta.persistence.*;
-import lombok.*;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+import org.hibernate.annotations.CreationTimestamp;
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import java.time.LocalDateTime;
 
 @Entity
+@Table(name = "comment")
 @Getter
 @Setter
-@NoArgsConstructor(access = AccessLevel.PROTECTED)
-@AllArgsConstructor
-@Builder
+@NoArgsConstructor
 public class Comment {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false)
+    @Column(nullable = false, columnDefinition = "TEXT")
     private String content;
 
-    @ManyToOne(fetch = FetchType.EAGER)
-    @JoinColumn(name = "task_id", nullable = false)
-    private Task task;
-
-    @ManyToOne(fetch = FetchType.EAGER)
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
-    @Column(name = "created_at")
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "task_id", nullable = false)
+    private Task task;
+
+    @Column(updatable = false, nullable = false)
     private LocalDateTime createdAt;
 
-    @PrePersist
-    public void prePersist() {
-        if (this.createdAt == null) {
-            this.createdAt = LocalDateTime.now();
-        }
-    }
-
-    public void updateContent(String content) {
+    public Comment(String content, User user, Task task) {
         this.content = content;
-    }
-
-    public User getUser() {
-        return user;
+        this.user = user;
+        this.task = task;
+        this.createdAt = LocalDateTime.now();
     }
 }

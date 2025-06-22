@@ -76,12 +76,10 @@ export default function ProjectsPage() {
   const fetchProjects = useCallback(async () => {
     setIsLoading(true);
     setError(null);
-    console.log("프로젝트 목록 조회를 시작합니다.");
 
     const response = await apiCall<ApiProject[]>('/api/projects');
 
     if (response.success) {
-      console.log("프로젝트 목록 조회 API 호출 성공. 받은 데이터:", response.data);
       const apiProjects = response.data;
 
       const sortedApiProjects = [...apiProjects].sort((a, b) => {

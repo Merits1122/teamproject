@@ -4,10 +4,12 @@ import com.example.backend.dto.ChangePasswordRequest;
 import com.example.backend.dto.SignupRequest;
 import com.example.backend.dto.UserProfileRequest;
 import com.example.backend.dto.UserProfileResponse;
+import com.example.backend.dto.NotificationSettingsResponse;
+import com.example.backend.entity.notification.NotificationSettings;
 import com.example.backend.entity.user.User;
 import com.example.backend.entity.user.UserProfile;
 import com.example.backend.entity.user.UserSecurity;
-import com.example.backend.repository.UserProfileRepository;
+import com.example.backend.repository.NotificationSettingsRepository;
 import com.example.backend.repository.UserRepository;
 import com.example.backend.repository.UserSecurityRepository;
 import com.example.backend.security.CustomUserDetails;
@@ -44,6 +46,7 @@ public class UserService implements UserDetailsService {
     private final EmailService emailService;
     private final StorageService storageService;
     private final UserSecurityRepository userSecurityRepository;
+    private final NotificationSettingsRepository notificationSettingsRepository;
 
     @Value("${frontend.reset-password.url}")
     private String resetPasswordUrlBase;
@@ -63,12 +66,13 @@ public class UserService implements UserDetailsService {
                        @Qualifier("emailServiceImpl") EmailService emailService,
                        StorageService storageService,
                        UserSecurityRepository userSecurityRepository,
-                       UserProfileRepository userProfileRepository) {
+                       NotificationSettingsRepository notificationSettingsRepository) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.emailService = emailService;
         this.storageService = storageService;
         this.userSecurityRepository = userSecurityRepository;
+        this.notificationSettingsRepository = notificationSettingsRepository;
     }
 
 
@@ -91,12 +95,16 @@ public class UserService implements UserDetailsService {
 
         UserProfile userProfile = new UserProfile();
         UserSecurity userSecurity = new UserSecurity();
+        NotificationSettings notificationSettings = new NotificationSettings();
+
         userSecurity.setPassword(passwordEncoder.encode(signupRequest.getPassword()));
 
         user.setUserProfile(userProfile);
         user.setUserSecurity(userSecurity);
+        user.setNotificationSettings(notificationSettings);
 
         userRepository.save(user);
+
         logger.info("신규 사용자 등록 완료. 이메일 인증 대기 중 | 이메일: {}", user.getEmail());
 
         emailService.sendVerificationEmail(user.getEmail(), verificationToken, verifyEmailUrlBase);
@@ -111,6 +119,13 @@ public class UserService implements UserDetailsService {
         user.setEmailVerificationToken(null);
         userRepository.save(user);
         logger.info("이메일 인증 성공 | 사용자: {}", user.getEmail());
+    }
+
+    @Transactional(readOnly = true)
+    public boolean isSocialUser(String email) {
+        return userRepository.findByEmail(email)
+                .map(user -> user.getProvider() != User.AuthProvider.LOCAL)
+                .orElse(false);
     }
 
     //비밀번호 재설정
@@ -212,6 +227,10 @@ public class UserService implements UserDetailsService {
         }
 
         String newPassword = changePasswordRequest.getNewPassword();
+
+        if (passwordEncoder.matches(newPassword, userSecurity.getPassword())) {
+            throw new IllegalArgumentException("새 비밀번호는 현재 비밀번호와 다르게 설정해야 합니다.");
+        }
         if (newPassword.length() < 8) {
             throw new IllegalArgumentException("새 비밀번호는 최소 8자 이상이어야 합니다.");
         }
@@ -306,5 +325,32 @@ public class UserService implements UserDetailsService {
         }
         userSecurityRepository.save(userSecurity);
         logger.info("2FA 설정 변경 -> {} | 사용자: {}", enabled, currentUser.getEmail());
+    }
+
+    @Transactional(readOnly = true)
+    public NotificationSettingsResponse getNotificationSettings(User currentUser) {
+        NotificationSettings settings = notificationSettingsRepository.findById(currentUser.getId())
+                .orElseThrow(() -> new EntityNotFoundException("사용자 ID " + currentUser.getId() + "에 대한 알림 설정을 찾을 수 없습니다."));
+
+        return new NotificationSettingsResponse(settings);
+    }
+
+    @Transactional
+    public NotificationSettingsResponse updateNotificationSettings(User currentUser, NotificationSettingsResponse dto) {
+        NotificationSettings settings = notificationSettingsRepository.findById(currentUser.getId())
+                .orElseThrow(() -> new EntityNotFoundException("사용자 설정을 찾을 수 없습니다: " + currentUser.getId()));
+
+        settings.setEmailNotifications(dto.isEmailNotifications());
+        settings.setTaskAssigned(dto.isTaskAssigned());
+        settings.setTaskUpdated(dto.isTaskUpdated());
+        settings.setTaskCommented(dto.isTaskCommented());
+        settings.setTaskDueDate(dto.isTaskDueDate());
+        settings.setProjectInvitation(dto.isProjectInvitation());
+        settings.setDailyDigest(dto.isDailyDigest());
+        settings.setWeeklyDigest(dto.isWeeklyDigest());
+
+        notificationSettingsRepository.save(settings);
+
+        return new NotificationSettingsResponse(settings);
     }
 }

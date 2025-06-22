@@ -2,72 +2,57 @@ package com.example.backend.controller;
 
 import com.example.backend.dto.CommentRequest;
 import com.example.backend.dto.CommentResponse;
+import com.example.backend.entity.comment.Comment;
+import com.example.backend.entity.user.User;
 import com.example.backend.service.CommentService;
-import lombok.RequiredArgsConstructor;
+import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 @RestController
-@RequestMapping("/api/dashboard/project/{projectId}/tasks/{taskId}/comment")
-@RequiredArgsConstructor
+@RequestMapping("/api")
 public class CommentController {
 
     private final CommentService commentService;
 
-    // 댓글 작성
-    @PostMapping
-    public ResponseEntity<CommentResponse> createComment(
-            @PathVariable Long projectId,
-            @PathVariable Long taskId,
-            @RequestBody CommentRequest requestDTO,
-            @AuthenticationPrincipal UserDetails userDetails
-    ) {
-        String email = userDetails.getUsername();
-        CommentResponse responseDTO = commentService.createComment(taskId, requestDTO.getContent(), email);
-        return ResponseEntity.ok(responseDTO);
+    public CommentController(CommentService commentService) {
+        this.commentService = commentService;
     }
 
-    // 댓글 목록 조회
-    @GetMapping
-    public ResponseEntity<List<CommentResponse>> getComments(
-            @PathVariable Long projectId,
+    @PostMapping("/tasks/{taskId}/comments")
+    public ResponseEntity<CommentResponse> addComment(
             @PathVariable Long taskId,
-            @AuthenticationPrincipal UserDetails userDetails
-    ) {
-        String email = userDetails.getUsername();
-        List<CommentResponse> comments = commentService.getCommentsByTaskId(taskId, email);
-        return ResponseEntity.ok(comments);
+            @Valid @RequestBody CommentRequest commentRequest,
+            @AuthenticationPrincipal User currentUser) {
+        Comment newComment = commentService.addComment(taskId, commentRequest, currentUser);
+        return ResponseEntity.ok(new CommentResponse(newComment));
     }
 
-    // 댓글 수정
-    @PutMapping("/{commentId}")
+    @GetMapping("/tasks/{taskId}/comments")
+    public ResponseEntity<List<CommentResponse>> getComments(@PathVariable Long taskId, @AuthenticationPrincipal User currentUser) {
+        List<Comment> comments = commentService.getCommentsForTask(taskId, currentUser);
+        List<CommentResponse> response = comments.stream()
+                .map(CommentResponse::new)
+                .collect(Collectors.toList());
+        return ResponseEntity.ok(response);
+    }
+
+    @PutMapping("/comments/{commentId}")
     public ResponseEntity<CommentResponse> updateComment(
-            @PathVariable Long projectId,
-            @PathVariable Long taskId,
             @PathVariable Long commentId,
-            @RequestBody CommentRequest requestDTO,
-            @AuthenticationPrincipal UserDetails userDetails
-    ) {
-        String email = userDetails.getUsername();
-        System.out.println("받은 댓글 내용 = " + requestDTO.getContent());
-        CommentResponse responseDTO = commentService.updateComment(commentId, requestDTO.getContent(), email);
-        return ResponseEntity.ok(responseDTO);
+            @Valid @RequestBody CommentRequest commentRequest,
+            @AuthenticationPrincipal User currentUser) {
+        Comment updatedComment = commentService.updateComment(commentId, commentRequest, currentUser);
+        return ResponseEntity.ok(new CommentResponse(updatedComment));
     }
 
-    // 댓글 삭제
-    @DeleteMapping("/{commentId}")
-    public ResponseEntity<Void> deleteComment(
-            @PathVariable Long projectId,
-            @PathVariable Long taskId,
-            @PathVariable Long commentId,
-            @AuthenticationPrincipal UserDetails userDetails
-    ) {
-        String email = userDetails.getUsername();
-        commentService.deleteComment(commentId, email);
+    @DeleteMapping("/comments/{commentId}")
+    public ResponseEntity<Void> deleteComment(@PathVariable Long commentId, @AuthenticationPrincipal User currentUser) {
+        commentService.deleteComment(commentId, currentUser);
         return ResponseEntity.noContent().build();
     }
 }

@@ -2,21 +2,25 @@ package com.example.backend.service;
 
 import com.example.backend.dto.ProjectRequest;
 import com.example.backend.dto.ProjectResponse;
+import com.example.backend.entity.activitylog.ActivityLogType;
 import com.example.backend.entity.project.Project;
 import com.example.backend.entity.task.Task;
 import com.example.backend.entity.user.User;
 import com.example.backend.entity.Status;
 import com.example.backend.repository.ProjectRepository;
 import jakarta.persistence.EntityNotFoundException;
+import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
+@RequiredArgsConstructor
 @Transactional
 public class ProjectService {
 
@@ -24,12 +28,8 @@ public class ProjectService {
 
     private final ProjectRepository projectRepository;
     private final ProjectMemberService projectMemberService;
-
-    public ProjectService(ProjectRepository projectRepository,
-                          ProjectMemberService projectMemberService) {
-        this.projectRepository = projectRepository;
-        this.projectMemberService = projectMemberService;
-    }
+    private final ActivityLogService activityLogService;
+    private final SseService sseService;
 
     public ProjectResponse createProject(ProjectRequest request, User creator) {
         if (request.getStartDate() != null && request.getEndDate() != null &&
@@ -49,6 +49,8 @@ public class ProjectService {
         Project savedProject = projectRepository.save(project);
 
         projectMemberService.addProjectCreatorAsAdmin(savedProject, creator);
+        String message = String.format("<strong>%s</strong>님이 <strong>'%s'</strong> 프로젝트를 생성했습니다.", creator.getName(), savedProject.getName());
+        activityLogService.createLog(savedProject, creator, message, ActivityLogType.PROJECT_CREATED);
         logger.info("프로젝트 생성 완료 | ID: {}, 이름: '{}'", savedProject.getId(), savedProject.getName());
 
         return new ProjectResponse(savedProject);
@@ -63,25 +65,27 @@ public class ProjectService {
         return new ProjectResponse(project);
     }
 
-    //프로젝트 수정
-    /*
-    public ProjectResponse updateProject(Long projectId, ProjectRequest requestDto, User currentUser) {
+
+    public ProjectResponse updateProject(Long projectId, ProjectRequest projectRequest, User currentUser) {
         Project project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new EntityNotFoundException("수정할 프로젝트를 찾을 수 없습니다: ID " + projectId));
 
         projectMemberService.ensureUserIsAdminOfProject(project, currentUser);
 
-        project.setName(requestDto.getName());
-        project.setDescription(requestDto.getDescription());
-        project.setEndDate(requestDto.getEndDate());
-        if (requestDto.getStatus() != null) {
-            project.setStatus(requestDto.getStatus());
+        project.setName(projectRequest.getName());
+        project.setDescription(projectRequest.getDescription());
+        project.setStartDate(projectRequest.getStartDate());
+        project.setEndDate(projectRequest.getEndDate());
+        if (projectRequest.getStatus() != null) {
+            project.setStatus(projectRequest.getStatus());
         }
         Project updatedProject = projectRepository.save(project);
+        String message = String.format("<strong>%s</strong>님이 프로젝트의 세부 정보를 수정했습니다.", currentUser.getName());
+        activityLogService.createLog(updatedProject, currentUser, message, ActivityLogType.PROJECT_UPDATED);
+        sseService.broadcastToProjectMembers(projectId, "project-updated", Map.of("projectId", projectId));
         logger.info("프로젝트 수정 성공 | ID: {}, 수정자: {}", projectId, currentUser.getEmail());
         return new ProjectResponse(updatedProject);
-    }*/
-    //지금 필요 x
+    }
 
     public void deleteProject(Long projectId, User currentUser) {
         Project project = projectRepository.findById(projectId)

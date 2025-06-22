@@ -2,10 +2,12 @@ package com.example.backend.service;
 
 import com.example.backend.dto.GoogleLoginRequest;
 import com.example.backend.dto.LoginResponse;
+import com.example.backend.entity.notification.NotificationSettings;
 import com.example.backend.entity.user.User;
 import com.example.backend.entity.user.User.AuthProvider;
 import com.example.backend.entity.user.UserProfile;
 import com.example.backend.entity.user.UserSecurity;
+import com.example.backend.repository.NotificationSettingsRepository;
 import com.example.backend.repository.UserRepository;
 import com.example.backend.security.JwtTokenProvider;
 import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
@@ -32,14 +34,17 @@ public class OAuthService {
     private final JwtTokenProvider jwtTokenProvider;
     private final PasswordEncoder passwordEncoder;
     private final GoogleIdTokenVerifier verifier;
+    private final NotificationSettingsRepository notificationSettingsRepository;
 
     public OAuthService(UserRepository userRepository,
                        JwtTokenProvider jwtTokenProvider,
                        PasswordEncoder passwordEncoder,
-                       @Value("${google.oauth.client.id}") String googleClientId) {
+                       @Value("${google.oauth.client.id}") String googleClientId,
+                        NotificationSettingsRepository notificationSettingsRepository) {
         this.userRepository = userRepository;
         this.jwtTokenProvider = jwtTokenProvider;
         this.passwordEncoder = passwordEncoder;
+        this.notificationSettingsRepository = notificationSettingsRepository;
         this.verifier = new GoogleIdTokenVerifier.Builder(new NetHttpTransport(), new GsonFactory())
                 .setAudience(Collections.singletonList(googleClientId))
                 .build();
@@ -89,8 +94,11 @@ public class OAuthService {
             UserSecurity newSecurity = new UserSecurity();
             newSecurity.setPassword(passwordEncoder.encode(UUID.randomUUID().toString()));
 
+            NotificationSettings newSettings = new NotificationSettings(newUser);
+
             newUser.setUserProfile(newProfile);
             newUser.setUserSecurity(newSecurity);
+            newUser.setNotificationSettings(newSettings);
 
             user = userRepository.save(newUser);
             logger.info("새로운 계정 생성 완료: {}", email);

@@ -13,11 +13,11 @@ import lombok.Setter;
 public class UserProfile {
 
     @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @OneToOne(fetch = FetchType.LAZY)
-    @MapsId
-    @JoinColumn(name = "user_id")
+    @JoinColumn(name = "user_id", nullable = false, unique = true)
     private User user;
 
     @Column(length = 1000)

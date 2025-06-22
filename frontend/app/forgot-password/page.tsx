@@ -30,7 +30,6 @@ export default function ForgotPasswordPage() {
     }
 
     setIsLoading(true)
-    console.log("비밀번호 재설정 요청 | 이메일:", email);
     
     const response = await apiCall<string>('/api/auth/forgot-password', {
         method: "POST",

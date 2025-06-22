@@ -1,6 +1,7 @@
 package com.example.backend.controller;
 
 import com.example.backend.dto.ChangePasswordRequest;
+import com.example.backend.dto.NotificationSettingsResponse;
 import com.example.backend.dto.UserProfileResponse;
 import com.example.backend.dto.UserProfileRequest;
 import com.example.backend.entity.user.User;
@@ -18,7 +19,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 @RestController
-@RequestMapping("/api/user")
+@RequestMapping("/api/user/profile")
 public class UserProfileController {
 
     private static final Logger logger = LoggerFactory.getLogger(UserProfileController.class);
@@ -29,7 +30,7 @@ public class UserProfileController {
     }
 
     //프로필 조회
-    @GetMapping("/profile")
+    @GetMapping
     public ResponseEntity<?> getUserProfile(@AuthenticationPrincipal User currentUser) {
         if (currentUser == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("프로필을 조회하려면 로그인이 필요합니다.");
@@ -45,7 +46,7 @@ public class UserProfileController {
     }
 
     //프로필 수정
-    @PutMapping("/profile")
+    @PutMapping
     public ResponseEntity<?> updateUserProfile(
             @Valid @RequestBody UserProfileRequest userProfileRequest,
             @AuthenticationPrincipal User currentUser) {
@@ -63,7 +64,7 @@ public class UserProfileController {
     }
 
     //아바타 수정
-    @PostMapping(value = "/profile/avatar", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PostMapping(value = "/avatar", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<?> updateUserAvatar(
             @RequestParam("avatarFile") MultipartFile avatarFile, // 프론트에서 "avatarFile" 이름으로 보내야 함
             @AuthenticationPrincipal User currentUser) {
@@ -87,7 +88,7 @@ public class UserProfileController {
     }
 
     //비밀번호 변경
-    @PutMapping("/profile/password")
+    @PutMapping("/password")
     public ResponseEntity<String> changePassword(
             @Valid @RequestBody ChangePasswordRequest changePasswordRequest,
             @AuthenticationPrincipal User currentUser) {
@@ -109,7 +110,7 @@ public class UserProfileController {
         }
     }
 
-    @PostMapping("/profile/2fa/enable")
+    @PostMapping("/2fa/enable")
     public ResponseEntity<String> enable2FA(@AuthenticationPrincipal User currentUser) {
         if (currentUser == null)
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("로그인이 필요합니다.");
@@ -121,7 +122,7 @@ public class UserProfileController {
         }
     }
 
-    @PostMapping("/profile/2fa/disable")
+    @PostMapping("/2fa/disable")
     public ResponseEntity<String> disable2FA(@AuthenticationPrincipal User currentUser) {
         if (currentUser == null)
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("로그인이 필요합니다.");
@@ -142,4 +143,15 @@ public class UserProfileController {
         return ResponseEntity.badRequest().body(errorMessage);
     }
 
+    @GetMapping("/notification-settings")
+    public ResponseEntity<NotificationSettingsResponse> getNotificationSettings(@AuthenticationPrincipal User currentUser) {
+        return ResponseEntity.ok(userService.getNotificationSettings(currentUser));
+    }
+
+    @PutMapping("/notification-settings")
+    public ResponseEntity<NotificationSettingsResponse> updateNotificationSettings(
+            @AuthenticationPrincipal User currentUser,
+            @RequestBody NotificationSettingsResponse settingsDto) {
+        return ResponseEntity.ok(userService.updateNotificationSettings(currentUser, settingsDto));
+    }
 }

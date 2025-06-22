@@ -88,8 +88,6 @@ public class ProjectController {
         }
     }
 
-    //프로젝트 수정
-    /*
     @PutMapping("/{projectId}")
     public ResponseEntity<?> updateProject(
             @PathVariable Long projectId,
@@ -110,7 +108,7 @@ public class ProjectController {
             logger.error("프로젝트 수정 중 오류 발생 | 프로젝트 ID: {}", projectId, e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("프로젝트 수정 중 오류가 발생했습니다.");
         }
-    }*/
+    }
 
     //프로젝트 삭제
     @DeleteMapping("/{projectId}")

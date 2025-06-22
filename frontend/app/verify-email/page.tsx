@@ -24,7 +24,6 @@ function VerifyEmailLogic() {
     const verifyEmail = async () => {
       const response = await apiCall<string>(`/api/auth/verify-email?token=${token}`);
       if (response.success) {
-        console.log("이메일 인증 API 호출 성공:", response.data);
         setStatus("success");
         setMessage(response.data);
       } else {

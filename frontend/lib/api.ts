@@ -17,7 +17,6 @@ export const apiCall = async <T = any>(
 ): Promise<ApiResponse<T>> => {
 
   const url = `${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080'}${endpoint}`; 
-  console.log("API 호출 주소:", url); 
   const token = getToken();
 
   const defaultHeaders: HeadersInit = { "Content-Type": "application/json" };
@@ -35,19 +34,13 @@ export const apiCall = async <T = any>(
       ...defaultHeaders,
       ...options.headers,
     },
+    cache: 'no-store',
   };
 
   try {
     const response = await fetch(url, config);
 
     if (!response.ok) {
-       const isAuthRoute = endpoint.startsWith('/api/auth/');
-      if ((response.status === 401 || response.status === 403) && !isAuthRoute) {
-        removeToken();
-        window.location.href = '/login?error=session_expired'; 
-        return { success: false, error: { message: '세션이 만료되었습니다. 다시 로그인해주세요.', status: 401 } };
-      }
-
       const errorText = await response.text();
       return { 
         success: false, 

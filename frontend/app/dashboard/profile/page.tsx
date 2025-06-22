@@ -216,7 +216,7 @@ export default function ProfilePage() {
             <Textarea
               id="profile-introduce"
               name="introduce"
-              value={profile.introduce}
+              value={profile.introduce || ""}
               onChange={handleInputChange}
               placeholder="자신에 대해 간략히 소개해주세요."
               rows={4}

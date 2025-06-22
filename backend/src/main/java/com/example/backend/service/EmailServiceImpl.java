@@ -27,6 +27,23 @@ public class EmailServiceImpl implements EmailService {
         this.javaMailSender = javaMailSender;
     }
 
+    // 공통 HTML 이메일 발송 메소드
+    public void sendEmail(String toEmail, String subject, String htmlBody) {
+        try {
+            MimeMessage mimeMessage = javaMailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, "utf-8");
+            String fromDisplayName = "TaskFlow";
+            helper.setFrom(fromEmail, fromDisplayName);
+            helper.setTo(toEmail);
+            helper.setSubject(subject);
+            helper.setText(htmlBody, true);
+            javaMailSender.send(mimeMessage);
+            logger.info("'{}'에게 이메일 전송 성공", toEmail);
+        } catch (MessagingException | UnsupportedEncodingException e) {
+            logger.error("'{}'에게 이메일 전송 실패", toEmail, e);
+        }
+    }
+
     //본인인증
     @Override
     @Async
@@ -40,7 +57,7 @@ public class EmailServiceImpl implements EmailService {
                         "</div>",
                 verificationLink
         );
-        sendHtmlEmail(toEmail, subject, htmlBody);
+        sendEmail(toEmail, subject, htmlBody);
     }
 
     //비밀번호 초기화
@@ -54,7 +71,7 @@ public class EmailServiceImpl implements EmailService {
                         "<p><a href=\"%s\">비밀번호 재설정 링크</a></p>",
                 resetLink
         );
-        sendHtmlEmail(toEmail, subject, htmlBody);
+        sendEmail(toEmail, subject, htmlBody);
     }
 
     //프로젝트 초대
@@ -67,7 +84,7 @@ public class EmailServiceImpl implements EmailService {
                         "<p><a href=\"%s\">프로젝트 초대 수락</a></p>",
                 invitationLink
         );
-        sendHtmlEmail(toEmail, subject, htmlBody);
+        sendEmail(toEmail, subject, htmlBody);
     }
 
     //2단계 인증
@@ -83,23 +100,24 @@ public class EmailServiceImpl implements EmailService {
                         "</div>",
                 code
         );
-        sendHtmlEmail(toEmail, subject, htmlBody);
+        sendEmail(toEmail, subject, htmlBody);
     }
 
-    // 공통 HTML 이메일 발송 메소드
-    private void sendHtmlEmail(String toEmail, String subject, String htmlBody) {
-        try {
-            MimeMessage mimeMessage = javaMailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, "utf-8");
-            String fromDisplayName = "TaskFlow";
-            helper.setFrom(fromEmail, fromDisplayName);
-            helper.setTo(toEmail);
-            helper.setSubject(subject);
-            helper.setText(htmlBody, true);
-            javaMailSender.send(mimeMessage);
-            logger.info("Email sent successfully to: {}", toEmail);
-        } catch (MessagingException | UnsupportedEncodingException e) {
-            logger.error("Failed to send email to {}: {}", toEmail, e.getMessage(), e);
-        }
+    //알람
+    @Override
+    public void sendNotificationEmail(String to, String subject, String message, String link) {
+        String htmlBody = String.format(
+                "<div style='font-family: sans-serif;'>" +
+                        "<h2>TaskFlow 알림</h2>" +
+                        "<div style='border-left: 3px solid #007bff; padding-left: 15px; margin: 15px 0;'>" +
+                        "<p>%s</p>" +
+                        "</div>" +
+                        "<a href=\"%s\" style='display: inline-block; padding: 10px 15px; background-color: #007bff; color: white; text-decoration: none; border-radius: 5px;'>자세히 보기</a>" +
+                        "</div>",
+                message, link
+        );
+        sendEmail(to, subject, htmlBody);
     }
+
+
 }

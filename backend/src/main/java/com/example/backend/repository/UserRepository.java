@@ -12,4 +12,5 @@ public interface  UserRepository extends JpaRepository<User, Long> {
     Optional<User> findByEmailWithSecurity(@Param("email") String email);
     Optional<User> findByEmail(String email);
     Optional<User> findByEmailVerificationToken(String token);
+
 }

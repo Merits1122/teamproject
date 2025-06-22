@@ -1,56 +1,46 @@
 package com.example.backend.entity.notification;
 
-import com.example.backend.entity.project.Project;
-import com.example.backend.entity.task.Task;
 import com.example.backend.entity.user.User;
 import jakarta.persistence.*;
 import lombok.*;
-
+import org.hibernate.annotations.CreationTimestamp;
 import java.time.LocalDateTime;
 
 @Entity
 @Getter
 @Setter
-@AllArgsConstructor
 @Builder
+@NoArgsConstructor
+@AllArgsConstructor
 @Table(name = "notification")
-@NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Notification {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false, length = 512)
-    private String content;
-
-    @Column(nullable = false)
-    private LocalDateTime createdAt;
-
-    @Column(nullable = false)
-    private String message;
-
-    @ManyToOne
-    private Task task;
-
-    @ManyToOne
-    private Project project;
-
-    @Column(name = "is_read", nullable = false)
-    private boolean isRead;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id", nullable = false)
+    private User user;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "recipient_id", nullable = false)
-    private User recipient;
-
-    public void setRead(boolean read) {
-        this.isRead = read;
-    }
-
-    @Builder.Default
-    private LocalDateTime timestamp = LocalDateTime.now();
+    @JoinColumn(name = "actor_id")
+    private User actor;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 50)
-    private NotificationCategory category;
+    @Column(nullable = false)
+    private NotificationType type;
+
+    @Column(nullable = false, length = 1000)
+    private String message;
+
+    @Column(nullable = false)
+    private String link;
+
+    @Column(nullable = false)
+    private boolean isRead = false;
+
+    @CreationTimestamp
+    @Column(nullable = false, updatable = false)
+    private LocalDateTime createdAt;
 }

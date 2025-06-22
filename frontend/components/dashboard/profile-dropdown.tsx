@@ -22,7 +22,6 @@ export function ProfileDropdown({ onLogout }: ProfileDropdownProps) {
     const response = await apiCall<UserProfile>('/api/user/profile');
 
     if (response.success) {
-      console.log("프로필 정보 조회 성공:", response.data);
       setUserProfile(response.data);
     } else {
       console.error("프로필 정보 조회 실패:", response.error.message);

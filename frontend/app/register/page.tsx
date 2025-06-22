@@ -94,7 +94,6 @@ function RegisterForm() {
     if (!validateForm()) return;
 
     setIsLoading(true);
-    console.log("회원가입 시도:", { name: formData.name, email: formData.email });
 
     const response = await apiCall('/api/auth/signup', {
       method: "POST",

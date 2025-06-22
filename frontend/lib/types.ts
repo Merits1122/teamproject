@@ -41,7 +41,62 @@ export interface UserProfile {
   id?: number | string;
   name: string;
   email: string;
+  provider: 'LOCAL' | 'GOOGLE';
   introduce: string;
   avatarUrl?: string | null;
   twoFactorEnabled?: boolean;
+}
+
+export interface ApiComment {
+  id: number;
+  content: string;
+  createdAt: string;
+  user: {
+    id: number;
+    name: string;
+    avatarUrl?: string | null;
+  };
+}
+
+export interface ApiActivityLog {
+  id: number;
+  message: string;
+  type: string;
+  createdAt: string;
+  userId: number;
+  userName: string;
+  userAvatarUrl?: string | null;
+  projectId: number;
+  projectName: string;
+}
+
+export interface ApiNotificationSettings {
+  emailNotifications: boolean;
+  taskAssigned: boolean;
+  taskUpdated: boolean;
+  taskCommented: boolean;
+  taskDueDate: boolean;
+  projectInvitation: boolean;
+  dailyDigest: boolean;
+  weeklyDigest: boolean;
+}
+
+export interface ApiNotification {
+  id: number;
+  type: string;
+  title: string;
+  description: string; 
+  link: string;
+  isRead: boolean;
+  createdAt: string;
+  user: {
+    name: string;
+    avatarUrl?: string | null;
+  } | null;
+}
+
+export interface ApiInvitationDetails {
+  inviterName: string;
+  projectName: string;
+  invitedEmail: string;
 }

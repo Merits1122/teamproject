@@ -1,7 +1,10 @@
 package com.example.backend.service;
 
+import com.example.backend.dto.InvitationDetailsResponse;
 import com.example.backend.dto.InviteUserRequest;
 import com.example.backend.dto.ProjectMemberResponse;
+import com.example.backend.entity.activitylog.ActivityLogType;
+import com.example.backend.entity.notification.NotificationType;
 import com.example.backend.entity.project.Project;
 import com.example.backend.entity.task.Task;
 import com.example.backend.entity.user.User;
@@ -16,14 +19,17 @@ import com.example.backend.repository.UserRepository;
 import jakarta.persistence.EntityNotFoundException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -39,6 +45,9 @@ public class ProjectMemberService {
     private final UserRepository userRepository;
     private final EmailService emailService;
     private final TaskRepository taskRepository;
+    private ActivityLogService activityLogService;
+    private final NotificationService notificationService;
+    private final SseService sseService;
 
     @Value("${frontend.accept-invitation.url}")
     private String acceptInvitationUrlBase;
@@ -47,12 +56,21 @@ public class ProjectMemberService {
                                 ProjectRepository projectRepository,
                                 UserRepository userRepository,
                                 @Qualifier("emailServiceImpl") EmailService emailService,
-                                TaskRepository taskRepository) {
+                                TaskRepository taskRepository,
+                                NotificationService notificationService,
+                                SseService sseService) {
         this.projectMemberRepository = projectMemberRepository;
         this.projectRepository = projectRepository;
         this.userRepository = userRepository;
         this.emailService = emailService;
         this.taskRepository = taskRepository;
+        this.notificationService = notificationService;
+        this.sseService = sseService;
+    }
+
+    @Autowired
+    public void setActivityLogService(@Lazy ActivityLogService activityLogService) {
+        this.activityLogService = activityLogService;
     }
 
     public void addProjectCreatorAsAdmin(Project project, User creator) {
@@ -91,45 +109,50 @@ public class ProjectMemberService {
         if (inviter.getEmail().equalsIgnoreCase(inviteeEmail)) {
             throw new IllegalArgumentException("자기 자신을 프로젝트에 초대할 수 없습니다.");
         }
-        Optional<User> existingUserOpt = userRepository.findByEmail(inviteeEmail);
 
-        User existingUserByEmail = userRepository.findByEmail(inviteeEmail).orElse(null);
-        if (existingUserOpt.isPresent()) {
-            User existingUser = existingUserOpt.get();
-            projectMemberRepository.findByProjectAndUser(project, existingUser)
-                    .ifPresent(existingMember -> {
-                        if (existingMember.getInvitationStatus() == ProjectInvitationStatus.ACCEPTED) {
-                            throw new DataIntegrityViolationException("이미 해당 프로젝트의 멤버입니다.");
-                        } else if (existingMember.getInvitationStatus() == ProjectInvitationStatus.PENDING) {
-                            logger.info("기존에 대기 중인 초대(ID: {})를 삭제하고 새로 생성합니다.", existingMember.getId());
-                            projectMemberRepository.delete(existingMember);
-                            projectMemberRepository.flush();
-                        }
-                    });
-        } else {
-            projectMemberRepository.findByProjectAndInvitedEmailAndInvitationStatus(project, inviteeEmail, ProjectInvitationStatus.PENDING)
-                    .ifPresent(pendingInvitation -> {
-                        logger.info("기존에 대기 중인 초대(ID: {})를 삭제하고 새로 생성합니다.", pendingInvitation.getId());
-                        projectMemberRepository.delete(pendingInvitation);
-                        projectMemberRepository.flush();
-                    });
-        }
+        projectMemberRepository.findByProjectIdAndInvitedEmail(projectId, inviteeEmail).ifPresent(existing -> {
+            if (existing.getInvitationStatus() == ProjectInvitationStatus.ACCEPTED) {
+                throw new DataIntegrityViolationException("'" + inviteeEmail + "'님은 이미 해당 프로젝트의 멤버입니다.");
+            }
+            if (existing.getInvitationStatus() == ProjectInvitationStatus.PENDING || existing.getInvitationStatus() == ProjectInvitationStatus.DECLINED) {
+                logger.info("기존의 초대(ID: {})를 삭제하고 새로 생성합니다.", existing.getId());
+                projectMemberRepository.delete(existing);
+                projectMemberRepository.flush();
+            }
+        });
 
+        Optional<User> userToInviteOpt = userRepository.findByEmail(inviteeEmail);
         String invitationToken = UUID.randomUUID().toString();
+
         ProjectMember newInvitation = ProjectMember.builder()
                 .project(project)
                 .invitedEmail(inviteeEmail)
-                .user(existingUserOpt.orElse(null))
+                .user(userToInviteOpt.orElse(null))
                 .role(roleToAssign)
                 .invitationToken(invitationToken)
                 .invitationTokenExpiry(LocalDateTime.now().plusDays(7))
                 .invitationStatus(ProjectInvitationStatus.PENDING)
                 .build();
         projectMemberRepository.save(newInvitation);
-        logger.info("초대 토큰 생성 및 저장 완료: [{}], 사용자: '{}', 프로젝트 ID: {}", invitationToken, inviteeEmail, projectId);
 
-        String inviterDisplayName = inviter.getName() != null && !inviter.getName().isEmpty() ? inviter.getName() : inviter.getEmail();
-        emailService.sendProjectInvitationEmail(inviteeEmail, project.getName(), inviterDisplayName, acceptInvitationUrlBase + "?token=" + invitationToken);
+        String inviteeIdentifier = userToInviteOpt.map(User::getName).orElse(inviteeEmail);
+
+        String message = String.format("<strong>%s</strong>님이 <strong>%s</strong>님을 프로젝트에 초대했습니다.", inviter.getName(), inviteeIdentifier);
+        activityLogService.createLog(project, inviter, message, ActivityLogType.MEMBER_INVITED);
+
+        String invitationLink = acceptInvitationUrlBase + "?token=" + invitationToken;
+
+        if (userToInviteOpt.isPresent()) {
+            User invitedUser = userToInviteOpt.get();
+            if (!invitedUser.getId().equals(inviter.getId())) {
+                String notificationMessage = String.format("<strong>%s</strong>님이 당신을 <strong>'%s'</strong> 프로젝트에 초대했습니다.",
+                        inviter.getName(), project.getName());
+                notificationService.createAndSendNotification(invitedUser, NotificationType.PROJECT_INVITATION, notificationMessage, invitationLink, inviter);
+            }
+        } else {
+            emailService.sendProjectInvitationEmail(inviteeEmail, project.getName(), inviter.getName(), invitationLink);
+        }
+        sseService.broadcastToProjectMembers(projectId, "project-updated", Map.of("projectId", projectId));
     }
 
     //프로젝트 초대 수락
@@ -174,7 +197,27 @@ public class ProjectMemberService {
         invitation.setInvitationToken(null);
         invitation.setInvitationTokenExpiry(null);
         projectMemberRepository.save(invitation);
+        sseService.broadcastToProjectMembers(invitation.getProject().getId(), "project-updated", Map.of("projectId", invitation.getProject().getId()));
+        String message = String.format("<strong>%s</strong>님이 프로젝트 초대를 수락했습니다.", acceptingUser.getName());
+        activityLogService.createLog(invitation.getProject(), acceptingUser, message, ActivityLogType.MEMBER_JOINED);
         logger.info("사용자 {}이 프로젝트 참가 수락 : {}", acceptingUser.getEmail(), invitation.getProject().getName());
+    }
+
+    @Transactional(readOnly = true)
+    public InvitationDetailsResponse getInvitationDetails(String token) {
+        ProjectMember invitation = projectMemberRepository.findByInvitationToken(token)
+                .orElseThrow(() -> new EntityNotFoundException("유효하지 않거나 만료된 초대 토큰입니다."));
+        return new InvitationDetailsResponse(invitation);
+    }
+
+    //초대 거절
+    @Transactional
+    public void declineProjectInvitation(String token, User currentUser) {
+        ProjectMember invitation = projectMemberRepository.findByInvitationToken(token)
+                .orElseThrow(() -> new EntityNotFoundException("유효하지 않거나 만료된 초대 토큰입니다."));
+
+        invitation.setInvitationStatus(ProjectInvitationStatus.DECLINED);
+        projectMemberRepository.save(invitation);
     }
 
     //프로젝트 멤버 목록
@@ -221,6 +264,9 @@ public class ProjectMemberService {
 
         memberToUpdate.setRole(newRole);
         projectMemberRepository.save(memberToUpdate);
+        String message = String.format("<strong>%s</strong>님이 <strong>%s</strong>님의 역할을 <strong>%s</strong>(으)로 변경했습니다.",
+                adminUser.getName(), memberToUpdate.getUser().getName(), newRole);
+        activityLogService.createLog(project, adminUser, message, ActivityLogType.MEMBER_ROLE_CHANGED);
         logger.info("ADMIN {}이 멤버 {}의 역할을 {}으로 변경", adminUser.getEmail(), memberToUpdate.getUser().getEmail(), newRole);
     }
 
@@ -254,10 +300,34 @@ public class ProjectMemberService {
             taskRepository.saveAll(assignedTasks);
         }
         projectMemberRepository.delete(memberToRemove);
+        String message = String.format("<strong>%s</strong>님이 <strong>%s</strong>님을 프로젝트에서 제외했습니다.",
+                adminUser.getName(), memberToRemove.getUser().getName());
+        activityLogService.createLog(project, adminUser, message, ActivityLogType.MEMBER_REMOVED);
+        sseService.broadcastToProjectMembers(projectId, "project-updated", Map.of("projectId", projectId));
         logger.info("관리자 {}이 사용자 {}을 project {}에서 삭제", adminUser.getEmail(), memberToRemove.getUser().getEmail(), project.getName());
     }
 
     //권한
+    public void ensureUserIsMemberOfProject(Project project, User user) {
+        boolean isMember = projectMemberRepository.findByProjectAndUserAndInvitationStatus(
+                project,
+                user,
+                ProjectInvitationStatus.ACCEPTED
+        ).isPresent();
+
+        if (!isMember) {
+            logger.warn("권한 없는 접근 시도 | 사용자: {}, 프로젝트: {}", user.getEmail(), project.getName());
+            throw new AccessDeniedException("이 프로젝트의 멤버가 아니므로 접근할 수 없습니다.");
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public ProjectRole getUserRoleInProject(Project project, User user) {
+        return projectMemberRepository.findByProjectIdAndUserId(project.getId(), user.getId())
+                .map(ProjectMember::getRole)
+                .orElse(null);
+    }
+
     public void ensureUserCanModifyTasksInProject(Project project, User user) {
         logger.debug("업무 수정/생성 권한 확인 | 사용자: {}, 프로젝트: '{}'", user.getEmail(), project.getName());
 

@@ -15,11 +15,11 @@ import java.time.LocalDateTime;
 public class UserSecurity {
 
     @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @OneToOne(fetch = FetchType.LAZY)
-    @MapsId
-    @JoinColumn(name = "user_id")
+    @JoinColumn(name = "user_id", nullable = false, unique = true)
     private User user;
 
     @Column(nullable = true)

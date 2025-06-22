@@ -18,7 +18,6 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     toast(message)
   }
 
-  // 전역 toast 함수를 window 객체에 추가 (백엔드 API 응답에서 사용 가능)
   useEffect(() => {
     if (typeof window !== "undefined") {
       ;(window as any).showToast = showToast
