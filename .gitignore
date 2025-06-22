@@ -1,24 +1,21 @@
 # .gitignore
 
-# Log files
 *.log
 logs
 
-# IDE and build files
 .idea/
 build/
 .gradle/
 *.jar
 *.war
 
-# Node modules and Next.js cache
 frontend/node_modules/
 frontend/.next/
 backend/node_modules/ #
 
-# Environment files (매우 중요!)
 .env
 frontend/.en
 
-# VS Code editor settings
 .vscode/
+
+*.zip
