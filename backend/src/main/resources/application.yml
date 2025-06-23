@@ -29,7 +29,7 @@ spring:
   jackson:
     serialization:
       write-dates-as-timestamps: false
-    time-zone: Asia/Seoul
+    time-zone: 
 
 cors:
   allowed-origins: ${CORS_ALLOWED_ORIGINS}
