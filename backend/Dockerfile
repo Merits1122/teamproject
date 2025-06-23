@@ -1,16 +1,25 @@
-FROM openjdk:17-jdk-slim
+FROM openjdk:17-jdk-slim as builder
+WORKDIR /workspace/app
 
+COPY gradlew .
+COPY gradle gradle
+COPY build.gradle.kts .
+COPY settings.gradle.kts .
+
+COPY src src
+
+RUN chmod +x ./gradlew
+RUN ./gradlew build -x test
+
+FROM openjdk:17-slim
 
 ENV TZ Asia/Seoul
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
-ENV JAVA_OPTS="-Duser.timezone=$TZ"
 
-CMD ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]
+WORKDIR /app
 
-ARG JAR_FILE_PATH=build/libs/*.jar
-
-COPY ${JAR_FILE_PATH} app.jar
+COPY --from=builder /workspace/app/build/libs/*.jar app.jar
 
 EXPOSE 8080
 
-ENTRYPOINT ["java", "-jar", "/app.jar"]
+ENTRYPOINT ["java", "-Duser.timezone=Asia/Seoul", "-jar", "/app.jar"]
